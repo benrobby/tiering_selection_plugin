@@ -1,0 +1,3 @@
+[submodule "hyrise-tiering"]
+	path = hyrise-tiering
+	url = git@github.com:mweisgut/hyrise-tiering.git
