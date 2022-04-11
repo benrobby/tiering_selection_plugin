@@ -40,4 +40,4 @@ set(CMAKE_CXX_STANDARD 20)
 
 
 ### Modify this line to add your own plugin
-add_plugin(NAME ExamplePlugin SRCS example_plugin.cpp example_plugin.hpp DEPS hyriseServer hyriseConsole)
+add_plugin(NAME TieringPlugin SRCS tiering_plugin.cpp tiering_plugin.hpp DEPS hyriseServer hyriseConsole)
