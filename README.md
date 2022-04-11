@@ -16,4 +16,4 @@ The plugin is introduced in our paper "Hyrise Re-engineered: An Extensible Datab
     - `make ExamplePlugin -j 12`
 1. Test your plugin, for example, using the Hyrise Console (from the main directory):
     - `./cmake-build-debug/hyriseConsole`
-    - `load_plugin cmake-build-debug/libExamplePlugin.dylib` (`libExamplePlugin.so` for Unix systems)
+    - `load_plugin cmake-build-debug/libExamplePlugin.so` (`libExamplePlugin.dylib` for Mac systems)

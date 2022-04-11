@@ -5,19 +5,21 @@
 #include "utils/abstract_plugin.hpp"
 #include "utils/singleton.hpp"
 
-namespace opossum {
+namespace opossum
+{
 
-class ExamplePlugin : public AbstractPlugin, public Singleton<ExamplePlugin> {
- public:
-  ExamplePlugin() : sm{Hyrise::get().storage_manager} {}
+    class ExamplePlugin : public AbstractPlugin, public Singleton<ExamplePlugin>
+    {
+    public:
+        ExamplePlugin() : sm{Hyrise::get().storage_manager} {}
 
-  std::string description() const final;
+        std::string description() const final;
 
-  void start() final;
+        void start() final;
 
-  void stop() final;
+        void stop() final;
 
-  StorageManager& sm;
-};
+        StorageManager &sm;
+    };
 
-}  // namespace opossum
+} // namespace opossum
