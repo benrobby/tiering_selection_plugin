@@ -1,4 +1,5 @@
 #include "tiering_plugin.hpp"
+#include "tiering_calibration.hpp"
 
 #include "storage/table.hpp"
 #include "scheduler/node_queue_scheduler.hpp"
@@ -53,6 +54,7 @@ namespace opossum
     void handle_run_calibration(const std::string command)
     {
         std::cout << "run calibration" << std::endl;
+        tiering_calibration();
     }
 }
 
@@ -84,7 +86,7 @@ namespace opossum
                 return res;
             }
         }
-        else if (command.starts_with("RUN CALIBRATION"))
+        else if (command.starts_with("RUN TIERING CALIBRATION"))
         {
             handle_run_calibration(command);
         }
