@@ -18,26 +18,44 @@ add_subdirectory(hyrise-tiering/)                                               
 # Add hyrise sources to be able to include headers                                                  #
 include_directories(                                                                                #
     ${PROJECT_SOURCE_DIR}/hyrise-tiering/src/lib/                                                           #
-    ${PROJECT_SOURCE_DIR}/hyrise-tiering/third_party/sql-parser/src                                         #
+    ${PROJECT_SOURCE_DIR}/hyrise-tiering/third_party/sql-parser/src
+    ${PROJECT_SOURCE_DIR}/hyrise-tiering/src/benchmarklib/                                                #
     ${TBB_INCLUDE_DIR}                                                                              #
     ${Boost_INCLUDE_DIR}                                                                           #
-)                                                                                                   #
-                                                                                                    #
+
+
+    ${PROJECT_SOURCE_DIR}/hyrise-tiering/third_party/compact_vector/include                                 #
+    ${PROJECT_SOURCE_DIR}/hyrise-tiering/third_party/flat_hash_map                                          #
+    ${PROJECT_SOURCE_DIR}/hyrise-tiering/third_party/fsst                                                   #
+    ${PROJECT_SOURCE_DIR}/hyrise-tiering/third_party/magic_enum/include                                     #
+    ${PROJECT_SOURCE_DIR}/hyrise-tiering/third_party/nlohmann_json/single_include  # encoding config        #
+    ${PROJECT_SOURCE_DIR}/hyrise-tiering/third_party/robin-map/include                                      #
+    ${PROJECT_SOURCE_DIR}/hyrise-tiering/third_party/sql-parser/src                                         #
+    ${PROJECT_SOURCE_DIR}/hyrise-tiering/third_party/uninitialized_vector                                   #
+)
+
+#
 # Global flags and include directories                                                              #
 add_compile_options(-std=c++17 -pthread -Wall -Wextra -pedantic -Werror -Wno-unused-parameter       #
--Wno-dollar-in-identifier-extension -Wno-unknown-pragmas)                                           #
+-Wno-unknown-pragmas)                                           #
                                                                                                     #
 #####################################################################################################
 
 include_directories(                                                                                #
     SYSTEM                                                                                          #
-                                                                                                    #
+    ${TBB_INCLUDE_DIR}                                                                                                   #
     ${PROJECT_SOURCE_DIR}/hyrise-tiering/third_party/                                                       #
 )
+
 
 set(CMAKE_CXX_STANDARD_REQUIRED ON)                                                                 #
 set(CMAKE_CXX_STANDARD 20)
 
-
 ### Modify this line to add your own plugin
-add_plugin(NAME TieringPlugin SRCS tiering_plugin.cpp tiering_calibration.hpp tiering_plugin.hpp DEPS hyriseServer hyriseConsole)
+add_plugin(NAME TieringPlugin SRCS tiering_plugin.cpp tiering_calibration.hpp tiering_plugin.hpp DEPS hyriseServer)
+add_plugin(NAME WorkloadHandlerPlugin SRCS
+    workload_handler.cpp
+    workload_handler.hpp
+    DEPS hyriseServer hyriseBenchmarkLib)
+
+
