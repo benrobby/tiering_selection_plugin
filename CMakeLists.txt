@@ -10,7 +10,7 @@ add_definitions(-DHYRISE_DEBUG=${HYRISE_DEBUG})
 # Usually, you should not have to touch the following part ##########################################
 cmake_minimum_required(VERSION 3.9 FATAL_ERROR)                                                     #
                                                                                                     #
-project("Hyrise Tiering Plugin")                                                                    #
+project("Hyrise Tiering Selection Plugin")                                                                    #
                                                                                                     #
 # Include CMakeLists.txt of Hyrise (all the build magic is contained there)                         #
 add_subdirectory(hyrise-tiering/)                                                                           #
@@ -52,7 +52,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)                                             
 set(CMAKE_CXX_STANDARD 20)
 
 ### Modify this line to add your own plugin
-add_plugin(NAME TieringPlugin SRCS tiering_plugin.cpp tiering_calibration.hpp tiering_plugin.hpp DEPS hyriseServer)
+add_plugin(NAME TieringSelectionPlugin SRCS tiering_selection_plugin.cpp tiering_calibration.hpp tiering_selection_plugin.hpp DEPS hyriseServer)
 add_plugin(NAME WorkloadHandlerPlugin SRCS
     workload_handler.cpp
     workload_handler.hpp

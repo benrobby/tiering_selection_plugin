@@ -1,4 +1,4 @@
-#include "tiering_plugin.hpp"
+#include "tiering_selection_plugin.hpp"
 #include "tiering_calibration.hpp"
 
 #include "storage/table.hpp"
@@ -22,7 +22,7 @@ namespace opossum
 
         std::stringstream ss;
         ss << "Set Hyrise scheduler to use " << core_count << " cores.";
-        Hyrise::get().log_manager.add_message("TieringPlugin", ss.str(), LogLevel::Info);
+        Hyrise::get().log_manager.add_message("TieringSelectionPlugin", ss.str(), LogLevel::Info);
         Hyrise::get().scheduler()->finish();
         Hyrise::get().topology.use_default_topology(core_count);
         // reset scheduler
@@ -104,9 +104,9 @@ namespace opossum
 namespace opossum
 {
 
-    std::string TieringPlugin::description() const { return "This is the Hyrise TieringPlugin"; }
+    std::string TieringSelectionPlugin::description() const { return "This is the Hyrise TieringSelectionPlugin"; }
 
-    void TieringPlugin::start()
+    void TieringSelectionPlugin::start()
     {
         std::cout << "starting tiering plugin" << std::endl;
         auto workload_command_executor_table = std::make_shared<MetaTieringCommandTable>();
@@ -116,11 +116,11 @@ namespace opossum
         _command_setting->register_at_settings_manager();
     }
 
-    void TieringPlugin::stop()
+    void TieringSelectionPlugin::stop()
     {
         _command_setting->unregister_at_settings_manager();
     }
 
-    EXPORT_PLUGIN(TieringPlugin)
+    EXPORT_PLUGIN(TieringSelectionPlugin)
 
 } // namespace opossum

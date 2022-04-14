@@ -20,10 +20,10 @@ namespace opossum
         std::shared_ptr<Table> _on_generate() const final;
     };
 
-    class TieringPlugin : public AbstractPlugin, public Singleton<TieringPlugin>
+    class TieringSelectionPlugin : public AbstractPlugin, public Singleton<TieringSelectionPlugin>
     {
     public:
-        TieringPlugin() {}
+        TieringSelectionPlugin() {}
 
         std::string description() const final;
 
