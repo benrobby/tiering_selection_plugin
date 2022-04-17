@@ -1,10 +1,13 @@
 #include "tiering_selection_plugin.hpp"
 #include "tiering_calibration.hpp"
+#include <nlohmann/json.hpp>
 
 #include "storage/table.hpp"
 #include "scheduler/node_queue_scheduler.hpp"
 #include "storage/encoding_type.hpp"
 #include <boost/algorithm/string.hpp>
+#include "sql/sql_pipeline_builder.hpp"
+#include <fstream>
 
 namespace opossum
 {
@@ -12,7 +15,51 @@ namespace opossum
 
     void apply_tiering_configuration(const std::string &json_configuration_path, size_t task_count = 0ul)
     {
-        std::cerr << "apply tiering configuartion not implemented" << std::endl;
+        Assert(std::filesystem::is_regular_file(json_configuration_path), "No such file: " + json_configuration_path);
+
+        std::cout << "Starting to apply tiering configuration '" + json_configuration_path;
+        if (task_count != 0)
+        {
+            std::cout << "Using thread count: " << task_count;
+        }
+
+        auto segment_count_pipeline = SQLPipelineBuilder{std::string{"SELECT COUNT(*) FROM meta_segments;"}}.create_pipeline();
+        const auto [segment_count_pipeline_status, segment_count_table] = segment_count_pipeline.get_result_table();
+        const auto segment_count = *segment_count_table->get_value<int64_t>(ColumnID{0}, 0ul);
+
+        std::ifstream config_stream(json_configuration_path);
+        nlohmann::json config;
+        config_stream >> config;
+
+        Assert(config.contains("configuration"), "Configuration dictionary missing in compression configuration JSON.");
+
+        auto tiered_segment_count = std::atomic_int{0};
+        auto moved_tiered_segment_count = std::atomic_int{0};
+        auto &storage_manager = Hyrise::get().storage_manager;
+
+        for (const auto &[table_name, segment_configs] : config["configuration"].items())
+        {
+            const auto &table = storage_manager.get_table(table_name);
+            std::cout << "Migrating segments for table: " << table_name << std::endl;
+
+            for (const auto &[i, segment_config] : segment_configs.items())
+            {
+                tiered_segment_count++;
+                const auto chunk_id = segment_config["chunk_id"];
+                const auto column_id = segment_config["column_id"];
+                const auto device_name = segment_config["device_name"];
+
+                // std::cout << "Moving segment with table_name: " << table_name << " chunk_id: " << chunk_id << " column_id: " << column_id << " to device_name: " << device_name << std::endl;
+                // todo move segment to tier
+                moved_tiered_segment_count++; // todo
+            }
+        }
+        std::cout << "Moved " << (int)moved_tiered_segment_count << " out of " << (int)tiered_segment_count << " segments to a different tier." << std::endl;
+        Assert(segment_count == static_cast<int64_t>(tiered_segment_count), "JSON did probably not include tiering specifications for all segments (of "
+                                                                            "" + std::to_string(segment_count) +
+                                                                                " segments, only "
+                                                                                "" +
+                                                                                std::to_string(tiered_segment_count) + " have been tiered)");
     }
 
     void handle_set_server_cores(const std::string command)
@@ -29,7 +76,7 @@ namespace opossum
         Hyrise::get().set_scheduler(std::make_shared<NodeQueueScheduler>());
     }
 
-    std::shared_ptr<Table> handle_apply_tiering_configuration(const std::string command, std::shared_ptr<opossum::Table> output_table)
+    void handle_apply_tiering_configuration(const std::string command, std::shared_ptr<opossum::Table> output_table)
     {
         std::cout << "Handle: apply_tiering_configuration" << std::endl;
 
@@ -44,11 +91,7 @@ namespace opossum
         if (tiering_command_strings.size() == 4)
         {
             apply_tiering_configuration(file_path_str, std::thread::hardware_concurrency());
-            output_table->append({pmr_string{"Command executed successfully."}});
-            return output_table;
         }
-
-        return nullptr;
     }
 
     void handle_run_calibration(const std::string command)
@@ -80,11 +123,7 @@ namespace opossum
         }
         else if (command.starts_with("APPLY TIERING CONFIGURATION "))
         {
-            auto res = handle_apply_tiering_configuration(command, output_table);
-            if (res != nullptr)
-            {
-                return res;
-            }
+            handle_apply_tiering_configuration(command, output_table);
         }
         else if (command.starts_with("RUN TIERING CALIBRATION"))
         {
