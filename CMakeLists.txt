@@ -56,6 +56,7 @@ add_plugin(NAME TieringSelectionPlugin SRCS tiering_selection_plugin.cpp tiering
 add_plugin(NAME WorkloadHandlerPlugin SRCS
     workload_handler.cpp
     workload_handler.hpp
-    DEPS hyriseServer hyriseBenchmarkLib)
+    tiering_calibration.hpp
+    DEPS hyriseServer hyriseBenchmarkLib benchmark)
 
 

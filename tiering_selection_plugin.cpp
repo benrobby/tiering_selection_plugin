@@ -76,19 +76,17 @@ namespace opossum
         Hyrise::get().set_scheduler(std::make_shared<NodeQueueScheduler>());
     }
 
-    void handle_apply_tiering_configuration(const std::string command, std::shared_ptr<opossum::Table> output_table)
+    void handle_apply_tiering_configuration(const std::string command)
     {
         std::cout << "Handle: apply_tiering_configuration" << std::endl;
 
-        std::stringstream ss;
-        auto tiering_command_strings = std::vector<std::string>{};
-        // Split benchmark name and sizing factor
-        boost::split(tiering_command_strings, command, boost::is_any_of(" "), boost::token_compress_on);
-        Assert(tiering_command_strings.size() == 4,
+        auto command_string = std::vector<std::string>{};
+        boost::split(command_string, command, boost::is_any_of(" "), boost::token_compress_on);
+        Assert(command_string.size() == 4,
                "Expecting one param. Usage: APPLY TIERING CONFIGURATION file");
 
-        const auto file_path_str = tiering_command_strings[3];
-        if (tiering_command_strings.size() == 4)
+        const auto file_path_str = command_string[3];
+        if (command_string.size() == 4)
         {
             apply_tiering_configuration(file_path_str, std::thread::hardware_concurrency());
         }
@@ -97,7 +95,15 @@ namespace opossum
     void handle_run_calibration(const std::string command)
     {
         std::cout << "run calibration" << std::endl;
-        tiering_calibration();
+
+        auto command_strings = std::vector<std::string>{};
+        boost::split(command_strings, command, boost::is_any_of(" "), boost::token_compress_on);
+        Assert(command_strings.size() >= 4,
+               "Expecting one param. Usage: RUN TIERING CALIBRATION <file> <device_1> <device_2> ...");
+
+        const auto file_path_str = command_strings[3];
+        auto devices = std::vector<std::string>(command_strings.begin() + 4, command_strings.end());
+        tiering_calibration(file_path_str, devices);
     }
 }
 
@@ -123,7 +129,7 @@ namespace opossum
         }
         else if (command.starts_with("APPLY TIERING CONFIGURATION "))
         {
-            handle_apply_tiering_configuration(command, output_table);
+            handle_apply_tiering_configuration(command);
         }
         else if (command.starts_with("RUN TIERING CALIBRATION"))
         {
