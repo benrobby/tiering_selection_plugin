@@ -1,13 +1,17 @@
 #include "tiering_selection_plugin.hpp"
 #include "tiering_calibration.hpp"
-#include <nlohmann/json.hpp>
 
 #include "storage/table.hpp"
 #include "scheduler/node_queue_scheduler.hpp"
 #include "storage/encoding_type.hpp"
-#include <boost/algorithm/string.hpp>
 #include "sql/sql_pipeline_builder.hpp"
+#include "memory/memory_resource_manager.hpp"
+#include "memory/umap_jemalloc_memory_resource.hpp"
+#include "memory/numa_memory_resource.hpp"
+
+#include <boost/algorithm/string.hpp>
 #include <fstream>
+#include <nlohmann/json.hpp>
 
 namespace opossum
 {
@@ -34,7 +38,6 @@ namespace opossum
         Assert(config.contains("configuration"), "Configuration dictionary missing in compression configuration JSON.");
 
         auto tiered_segment_count = std::atomic_int{0};
-        auto moved_tiered_segment_count = std::atomic_int{0};
         auto &storage_manager = Hyrise::get().storage_manager;
 
         for (const auto &[table_name, segment_configs] : config["configuration"].items())
@@ -44,17 +47,36 @@ namespace opossum
 
             for (const auto &[i, segment_config] : segment_configs.items())
             {
-                tiered_segment_count++;
-                const auto chunk_id = segment_config["chunk_id"];
-                const auto column_id = segment_config["column_id"];
-                const auto device_name = segment_config["device_name"];
+                ChunkID chunk_id = ChunkID{segment_config["chunk_id"].get<uint32_t>()};
+                ColumnID column_id = ColumnID{segment_config["column_id"].get<uint16_t>()};
+                std::string device_name = segment_config["device_name"];
 
-                // std::cout << "Moving segment with table_name: " << table_name << " chunk_id: " << chunk_id << " column_id: " << column_id << " to device_name: " << device_name << std::endl;
-                // todo move segment to tier
-                moved_tiered_segment_count++; // todo
+                tiered_segment_count++;
+                std::cout << "Moving segment with table_name: " << table_name << " chunk_id: " << chunk_id << " column_id: " << column_id << " to device_name: " << device_name << std::endl;
+
+                boost::container::pmr::memory_resource *resource = nullptr;
+                if (device_name == "DRAM")
+                {
+                    // compare (1) standard allocator (der gleiche aus dem pmr_vector z.b.) and (2) polymorphic allocator with standard memory resource (jemalloc?) (3) polymorphic allocator with numa local node
+                    resource = MemoryResourceManager::get().get_memory_resource<NumaAllocMemoryResource>(0).get();
+                }
+                else
+                {
+                    const auto sf = 1;
+                    const auto buf_size_percentage = 0.05;
+                    const auto page_size_bytes = 4 * 1024;
+                    const auto buf_size_bytes = static_cast<int>((sf * 1000000000) * buf_size_percentage);
+                    const auto umap_buf_size_pages = (buf_size_bytes + page_size_bytes) / page_size_bytes;
+                    resource = MemoryResourceManager::get().get_memory_resource<UmapJemallocMemoryResource>(umap_buf_size_pages, page_size_bytes, device_name, false).get();
+                }
+
+                const auto allocator = PolymorphicAllocator<void>{resource};
+                const auto &target_segment = table->get_chunk(chunk_id)->get_segment(column_id);
+                const auto migrated_segment = target_segment->copy_using_allocator(allocator);
+                table->get_chunk(chunk_id)->replace_segment(column_id, migrated_segment);
             }
         }
-        std::cout << "Moved " << (int)moved_tiered_segment_count << " out of " << (int)tiered_segment_count << " segments to a different tier." << std::endl;
+        std::cout << "Moved " << (int)tiered_segment_count << " segments to a different tier." << std::endl;
         Assert(segment_count == static_cast<int64_t>(tiered_segment_count), "JSON did probably not include tiering specifications for all segments (of "
                                                                             "" + std::to_string(segment_count) +
                                                                                 " segments, only "

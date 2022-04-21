@@ -51,12 +51,14 @@ include_directories(                                                            
 set(CMAKE_CXX_STANDARD_REQUIRED ON)                                                                 #
 set(CMAKE_CXX_STANDARD 20)
 
+add_definitions(-DHYRISE_WITH_UMAP=1)
+
 ### Modify this line to add your own plugin
-add_plugin(NAME TieringSelectionPlugin SRCS tiering_selection_plugin.cpp tiering_calibration.hpp tiering_selection_plugin.hpp DEPS hyriseServer)
+add_plugin(NAME TieringSelectionPlugin SRCS tiering_selection_plugin.cpp tiering_calibration.hpp tiering_selection_plugin.hpp DEPS hyrise hyriseBenchmarkLib benchmark)
 add_plugin(NAME WorkloadHandlerPlugin SRCS
     workload_handler.cpp
     workload_handler.hpp
     tiering_calibration.hpp
-    DEPS hyriseServer hyriseBenchmarkLib benchmark)
+    DEPS hyrise hyriseBenchmarkLib benchmark)
 
 

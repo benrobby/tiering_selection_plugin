@@ -89,6 +89,8 @@ namespace opossum
             // todo access pattern
             for (auto _ : state)
             {
+                // Todo(Ben) resolve data type, resolve segment type statt tablescan
+                // poslisten erstellen mit reference_segment_test
                 const auto table_scan = std::make_shared<TableScan>(_table_wrapper_map.at("lineitem"), _tpchq6_discount_predicate);
                 table_scan->execute();
             }
