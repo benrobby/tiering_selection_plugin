@@ -12,6 +12,7 @@
 #include <boost/algorithm/string.hpp>
 #include <fstream>
 #include <nlohmann/json.hpp>
+#include <chrono>
 
 namespace opossum
 {
@@ -37,8 +38,15 @@ namespace opossum
 
         Assert(config.contains("configuration"), "Configuration dictionary missing in compression configuration JSON.");
 
-        auto tiered_segment_count = std::atomic_int{0};
+        auto config_segment_count = std::atomic_int{0};
+        auto moved_segment_count = std::atomic_int{0};
         auto &storage_manager = Hyrise::get().storage_manager;
+
+        const auto run_start = std::chrono::steady_clock::now();
+        for (const auto p : Hyrise::get().plugin_manager.loaded_plugins())
+            std::cout << p << " plugin loaded." << std::endl;
+
+        std::unordered_map<std::tuple<std::string, ChunkID, ColumnID>, std::string, segment_key_hash> new_segment_locations = {};
 
         for (const auto &[table_name, segment_configs] : config["configuration"].items())
         {
@@ -51,8 +59,24 @@ namespace opossum
                 ColumnID column_id = ColumnID{segment_config["column_id"].get<uint16_t>()};
                 std::string device_name = segment_config["device_name"];
 
-                tiered_segment_count++;
-                std::cout << "Moving segment with table_name: " << table_name << " chunk_id: " << chunk_id << " column_id: " << column_id << " to device_name: " << device_name << std::endl;
+                config_segment_count++;
+                std::cout << "Segment with table_name: " << table_name << " chunk_id: " << chunk_id << " column_id: " << column_id << " should be on device_name: " << device_name << std::endl;
+
+                const auto segment_key = std::make_tuple(table_name, chunk_id, column_id);
+                new_segment_locations.emplace(segment_key, device_name);
+                if (!TieringSelectionPlugin::segment_locations.contains(segment_key))
+                {
+                    // we assume the segment is in DRAM
+                    // either it was newly added (then it is in DRAM)
+                    // or the map is simply empty (because this is the first run)
+                    continue;
+                }
+
+                if (TieringSelectionPlugin::segment_locations.at(segment_key) == device_name)
+                {
+                    // std::cout << "Segment is already on the correct device. Skipping." << std::endl;
+                    continue;
+                }
 
                 boost::container::pmr::memory_resource *resource = nullptr;
                 if (device_name == "DRAM")
@@ -62,10 +86,10 @@ namespace opossum
                 }
                 else
                 {
-                    const auto sf = 1;
-                    const auto buf_size_percentage = 0.05;
-                    const auto page_size_bytes = 4 * 1024;
-                    const auto buf_size_bytes = static_cast<int>((sf * 1000000000) * buf_size_percentage);
+                    const auto KiB = 1024;
+                    const auto MiB = 1024 * KiB;
+                    const auto page_size_bytes = 128 * KiB;
+                    const auto buf_size_bytes = 500 * MiB; // TODO(BEN) ONLY FOR FASTER TESTING, CHANGE BACK TO 100 MB
                     const auto umap_buf_size_pages = (buf_size_bytes + page_size_bytes) / page_size_bytes;
                     resource = MemoryResourceManager::get().get_memory_resource<UmapJemallocMemoryResource>(umap_buf_size_pages, page_size_bytes, device_name, false).get();
                 }
@@ -74,14 +98,19 @@ namespace opossum
                 const auto &target_segment = table->get_chunk(chunk_id)->get_segment(column_id);
                 const auto migrated_segment = target_segment->copy_using_allocator(allocator);
                 table->get_chunk(chunk_id)->replace_segment(column_id, migrated_segment);
+                moved_segment_count++;
             }
         }
-        std::cout << "Moved " << (int)tiered_segment_count << " segments to a different tier." << std::endl;
-        Assert(segment_count == static_cast<int64_t>(tiered_segment_count), "JSON did probably not include tiering specifications for all segments (of "
+        TieringSelectionPlugin::segment_locations = std::move(new_segment_locations);
+
+        const auto run_end = std::chrono::steady_clock::now();
+
+        std::cout << "Moved " << (int)moved_segment_count << " out of " << (int)config_segment_count << " segments to a different tier in " << std::chrono::duration_cast<std::chrono::duration<double>>(run_end - run_start).count() << " seconds." << std::endl;
+        Assert(segment_count == static_cast<int64_t>(config_segment_count), "JSON did probably not include tiering specifications for all segments (of "
                                                                             "" + std::to_string(segment_count) +
                                                                                 " segments, only "
                                                                                 "" +
-                                                                                std::to_string(tiered_segment_count) + " have been tiered)");
+                                                                                std::to_string(config_segment_count) + " have been tiered)");
     }
 
     void handle_set_server_cores(const std::string command)
@@ -187,6 +216,8 @@ namespace opossum
     {
         _command_setting->unregister_at_settings_manager();
     }
+
+    std::unordered_map<std::tuple<std::string, ChunkID, ColumnID>, std::string, segment_key_hash> TieringSelectionPlugin::segment_locations = {};
 
     EXPORT_PLUGIN(TieringSelectionPlugin)
 

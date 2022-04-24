@@ -1,5 +1,8 @@
 #pragma once
 
+#include <unordered_map>
+#include <tuple>
+
 #include "hyrise.hpp"
 #include "storage/storage_manager.hpp"
 #include "utils/abstract_plugin.hpp"
@@ -7,6 +10,20 @@
 
 namespace opossum
 {
+    using namespace opossum;
+
+    struct segment_key_hash
+    {
+        size_t operator()(const std::tuple<std::string, opossum::ChunkID, opossum::ColumnID> &p) const
+        {
+            size_t hash{0};
+            boost::hash_combine(hash, std::get<0>(p));
+            boost::hash_combine(hash, std::get<1>(p));
+            boost::hash_combine(hash, std::get<2>(p));
+
+            return hash;
+        }
+    };
 
     class MetaTieringCommandTable : public AbstractMetaTable
     {
@@ -48,6 +65,9 @@ namespace opossum
         };
 
         std::shared_ptr<TieringSetting> _command_setting;
+
+    public:
+        static std::unordered_map<std::tuple<std::string, ChunkID, ColumnID>, std::string, segment_key_hash> segment_locations;
     };
 
 } // namespace opossum
