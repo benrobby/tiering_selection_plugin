@@ -7,7 +7,7 @@
 #include "sql/sql_pipeline_builder.hpp"
 #include "memory/memory_resource_manager.hpp"
 #include "memory/umap_jemalloc_memory_resource.hpp"
-#include "memory/numa_memory_resource.hpp"
+#include "memory/jemalloc_memory_resource.hpp"
 
 #include <boost/algorithm/string.hpp>
 #include <fstream>
@@ -60,40 +60,27 @@ namespace opossum
                 std::string device_name = segment_config["device_name"];
 
                 config_segment_count++;
-                std::cout << "Segment with table_name: " << table_name << " chunk_id: " << chunk_id << " column_id: " << column_id << " should be on device_name: " << device_name << std::endl;
+                std::cout << "Segment " << (int)config_segment_count << " with table_name: " << table_name << " chunk_id: " << chunk_id << " column_id: " << column_id << " should be on device_name: " << device_name << std::endl;
 
                 const auto segment_key = std::make_tuple(table_name, chunk_id, column_id);
                 new_segment_locations.emplace(segment_key, device_name);
-                if (!TieringSelectionPlugin::segment_locations.contains(segment_key))
+                if (TieringSelectionPlugin::segment_locations.contains(segment_key))
+                {
+                    if (TieringSelectionPlugin::segment_locations.at(segment_key) == device_name)
+                    {
+                        // std::cout << "Segment is already on the correct device. Skipping." << std::endl;
+                        continue;
+                    }
+                }
+                else
                 {
                     // we assume the segment is in DRAM
                     // either it was newly added (then it is in DRAM)
                     // or the map is simply empty (because this is the first run)
-                    continue;
+                    // continue;
                 }
 
-                if (TieringSelectionPlugin::segment_locations.at(segment_key) == device_name)
-                {
-                    // std::cout << "Segment is already on the correct device. Skipping." << std::endl;
-                    continue;
-                }
-
-                boost::container::pmr::memory_resource *resource = nullptr;
-                if (device_name == "DRAM")
-                {
-                    // compare (1) standard allocator (der gleiche aus dem pmr_vector z.b.) and (2) polymorphic allocator with standard memory resource (jemalloc?) (3) polymorphic allocator with numa local node
-                    resource = MemoryResourceManager::get().get_memory_resource<NumaAllocMemoryResource>(0).get();
-                }
-                else
-                {
-                    const auto KiB = 1024;
-                    const auto MiB = 1024 * KiB;
-                    const auto page_size_bytes = 128 * KiB;
-                    const auto buf_size_bytes = 500 * MiB; // TODO(BEN) ONLY FOR FASTER TESTING, CHANGE BACK TO 100 MB
-                    const auto umap_buf_size_pages = (buf_size_bytes + page_size_bytes) / page_size_bytes;
-                    resource = MemoryResourceManager::get().get_memory_resource<UmapJemallocMemoryResource>(umap_buf_size_pages, page_size_bytes, device_name, false).get();
-                }
-
+                auto resource = MemoryResourceManager::get().get_memory_resource_for_device(device_name);
                 const auto allocator = PolymorphicAllocator<void>{resource};
                 const auto &target_segment = table->get_chunk(chunk_id)->get_segment(column_id);
                 const auto migrated_segment = target_segment->copy_using_allocator(allocator);
@@ -156,7 +143,19 @@ namespace opossum
         auto devices = std::vector<std::string>(command_strings.begin() + 4, command_strings.end());
         tiering_calibration(file_path_str, devices);
     }
-}
+
+    void handle_set_devices(const std::string command)
+    {
+        std::cout << "set devices" << std::endl;
+
+        auto command_strings = std::vector<std::string>{};
+        boost::split(command_strings, command, boost::is_any_of(" "), boost::token_compress_on);
+        Assert(command_strings.size() >= 2,
+               "Expecting zero or more param. Usage: SET DEVICES <device_names>");
+
+        MemoryResourceManager::devices = std::vector<std::string>(command_strings.begin() + 2, command_strings.end());
+    }
+} // namespace opossum
 
 namespace opossum
 {
@@ -185,6 +184,10 @@ namespace opossum
         else if (command.starts_with("RUN TIERING CALIBRATION"))
         {
             handle_run_calibration(command);
+        }
+        else if (command.starts_with("SET DEVICES "))
+        {
+            handle_set_devices(command);
         }
         else
         {
