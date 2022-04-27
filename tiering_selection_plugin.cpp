@@ -1,5 +1,4 @@
 #include "tiering_selection_plugin.hpp"
-#include "tiering_calibration.hpp"
 
 #include "storage/table.hpp"
 #include "scheduler/node_queue_scheduler.hpp"
@@ -8,7 +7,32 @@
 #include "memory/memory_resource_manager.hpp"
 #include "memory/umap_jemalloc_memory_resource.hpp"
 #include "memory/jemalloc_memory_resource.hpp"
+#include "logical_query_plan/stored_table_node.hpp"
+#include "operators/aggregate_sort.hpp"
+#include "operators/join_hash.hpp"
+#include "operators/table_scan.hpp"
+#include "operators/table_wrapper.hpp"
+#include "scheduler/operator_task.hpp"
+#include "storage/encoding_type.hpp"
+#include "tpch/tpch_constants.hpp"
+#include "tpch/tpch_table_generator.hpp"
+#include "types.hpp"
+#include "storage/table.hpp"
+#include "scheduler/node_queue_scheduler.hpp"
+#include "storage/encoding_type.hpp"
+#include "benchmark_config.hpp"
+#include "constant_mappings.hpp"
+#include "expression/aggregate_expression.hpp"
+#include "expression/expression_functional.hpp"
+#include "hyrise.hpp"
+#include "logical_query_plan/join_node.hpp"
+#include "logical_query_plan/lqp_translator.hpp"
+#include "logical_query_plan/predicate_node.hpp"
+#include "logical_query_plan/projection_node.hpp"
+#include "storage/reference_segment/reference_segment_iterable.hpp"
+#include "resolve_type.hpp"
 
+#include <benchmark/benchmark.h>
 #include <boost/algorithm/string.hpp>
 #include <fstream>
 #include <nlohmann/json.hpp>
@@ -16,7 +40,238 @@
 
 namespace opossum
 {
-    using namespace opossum; // NOLINT
+    using namespace opossum;                        // NOLINT
+    using namespace opossum::expression_functional; // NOLINT
+
+    using SegmentLocations = std::unordered_map<std::tuple<std::string, ChunkID, ColumnID>, std::string, segment_key_hash>;
+
+    std::map<std::string, std::shared_ptr<TableWrapper>> create_table_wrappers(StorageManager &sm)
+    {
+        std::map<std::string, std::shared_ptr<TableWrapper>> wrapper_map;
+        for (const auto &table_name : sm.table_names())
+        {
+
+            auto table = sm.get_table(table_name);
+            auto table_wrapper = std::make_shared<TableWrapper>(table);
+            table_wrapper->execute();
+            table_wrapper->never_clear_output();
+
+            wrapper_map.emplace(table_name, table_wrapper);
+        }
+
+        return wrapper_map;
+    }
+
+    void move_segment_to_device(std::shared_ptr<Table> table, const std::string &table_name, ChunkID chunk_id, ColumnID column_id, const std::string &device_name, SegmentLocations new_segment_locations)
+    {
+        const auto segment_key = std::make_tuple(table_name, chunk_id, column_id);
+        new_segment_locations.emplace(segment_key, device_name);
+        if (TieringSelectionPlugin::segment_locations.contains(segment_key))
+        {
+            if (TieringSelectionPlugin::segment_locations.at(segment_key) == device_name)
+            {
+                // std::cout << "Segment is already on the correct device. Skipping." << std::endl;
+                return;
+            }
+        }
+        else
+        {
+            // do not continue and rather copy the segment to dram again if it was initialized there
+            // but now use the allocator that we use
+            // continue;
+        }
+
+        auto resource = MemoryResourceManager::get().get_memory_resource_for_device(device_name);
+        const auto allocator = PolymorphicAllocator<void>{resource};
+        const auto &target_segment = table->get_chunk(chunk_id)->get_segment(column_id);
+        const auto migrated_segment = target_segment->copy_using_allocator(allocator);
+        table->get_chunk(chunk_id)->replace_segment(column_id, migrated_segment);
+    }
+
+    void tiering_calibration(const std::string &file_path, std::vector<std::string> devices)
+    {
+        std::cout << "Tiering calibration from plugin" << std::endl;
+
+        auto &sm = Hyrise::get().storage_manager;
+        const auto scale_factor = 1.0f; // sufficient size so we don't just measure the caches
+        const auto default_encoding = EncodingType::Dictionary;
+
+        auto benchmark_config = BenchmarkConfig::get_default_config();
+        // TODO(anyone): setup benchmark_config with the given default_encoding
+        // benchmark_config.encoding_config = EncodingConfig{SegmentEncodingSpec{default_encoding}};
+
+        if (!sm.has_table("lineitem"))
+        {
+            std::cout << "Generating TPC-H data set with scale factor " << scale_factor << " and " << default_encoding
+                      << " encoding:" << std::endl;
+            TPCHTableGenerator(scale_factor, ClusteringConfiguration::None,
+                               std::make_shared<BenchmarkConfig>(benchmark_config))
+                .generate_and_store();
+        }
+
+        std::map<std::string, std::shared_ptr<TableWrapper>> _table_wrapper_map = create_table_wrappers(sm);
+        auto table_name = "lineitem";
+        auto table = sm.get_table(table_name);
+
+        auto column_id = ColumnID{6};
+        auto datatype = table->column_data_type(column_id);
+
+        std::cout << "datatype for column 6: " << datatype << std::endl;
+        // Predicates as in TPC-H Q6, ordered by selectivity. Not necessarily the same order as determined by the optimizer
+        std::shared_ptr<PQPColumnExpression>
+            _tpchq6_discount_operand = pqp_column_(column_id, table->column_data_type(column_id),
+                                                   table->column_is_nullable(column_id), "");
+        std::shared_ptr<BetweenExpression> _tpchq6_discount_predicate = std::make_shared<BetweenExpression>(
+            PredicateCondition::BetweenInclusive, _tpchq6_discount_operand, value_(0.05), value_(0.70001));
+        auto table_wrapper = _table_wrapper_map.at(table_name);
+
+        // auto TieringCalibrationTableScan = [&](benchmark::State &state, const auto &device_name, const auto &access_pattern)
+        // {
+        //     SegmentLocations new_segment_locations = {};
+        //     // move all table segments to device
+        //     for (auto chunk_id = ChunkID{0}; chunk_id < table->chunk_count(); ++chunk_id)
+        //     {
+        //         move_segment_to_device(table, table_name, chunk_id, column_id, device_name, new_segment_locations);
+        //     }
+        //     TieringSelectionPlugin::segment_locations = std::move(new_segment_locations);
+
+        //     // todo access pattern
+
+        //     for (auto _ : state)
+        //     {
+        //         // Todo(Ben) resolve data type, resolve segment type statt tablescan
+        //         // poslisten erstellen mit reference_segment_test
+        //         const auto table_scan = std::make_shared<TableScan>(table_wrapper, _tpchq6_discount_predicate);
+        //         table_scan->execute();
+        //     }
+        // };
+
+        const auto monotonic_access_stride = 5; // todo determine a representative value
+
+        auto TieringCalibrationSegmentAccess = [&](benchmark::State &state, const auto &device_name, const auto &access_pattern)
+        {
+            SegmentLocations new_segment_locations = {};
+            // move all table segments to device
+            for (auto chunk_id = ChunkID{0}; chunk_id < table->chunk_count(); ++chunk_id)
+            {
+                move_segment_to_device(table, table_name, chunk_id, column_id, device_name, new_segment_locations);
+            }
+            TieringSelectionPlugin::segment_locations = std::move(new_segment_locations);
+
+            // multiple access patterns
+            std::vector<std::shared_ptr<ReferenceSegment>> reference_segments = {};
+            for (auto chunk_id = ChunkID{0}; chunk_id < table->chunk_count(); ++chunk_id)
+            {
+                auto segment = table->get_chunk(chunk_id)->get_segment(column_id);
+
+                auto pos_list = std::make_shared<RowIDPosList>();
+
+                if (access_pattern == "sequential")
+                {
+                    for (auto i = ChunkOffset{0}; i < segment->size(); ++i)
+                    {
+                        pos_list->push_back(RowID{chunk_id, i});
+                    }
+                }
+                else if (access_pattern == "random")
+                {
+                    for (auto i = ChunkOffset{0}; i < segment->size(); ++i)
+                    {
+                        pos_list->push_back(RowID{chunk_id, i}); // todo(ben): what about other chunk?
+                    }
+                    std::random_shuffle(pos_list->begin(), pos_list->end());
+                }
+                else if (access_pattern == "monotonic")
+                {
+                    // stride could also be std::rand() % (2 * monotonic_access_stride + 1)
+                    for (auto i = ChunkOffset{0}; i < segment->size(); i += monotonic_access_stride)
+                    {
+                        pos_list->push_back(RowID{chunk_id, i});
+                    }
+                }
+                else if (access_pattern == "single_point")
+                {
+                    pos_list->push_back(RowID{chunk_id, 0});
+                }
+                else
+                {
+                    throw std::runtime_error("Unknown access pattern");
+                }
+
+                reference_segments.push_back(std::make_shared<ReferenceSegment>(table, column_id, pos_list));
+            }
+
+            /**
+             * Measurement: for all segments, access all indices in the poslist
+             * Let n be the number of rows over all segments for the given column.
+             * - sequential: n
+             * - random: n
+             * - monotonic: n / monotonic_access_stride -> do this "monotonic_access_stride" times
+             * - single_point: # chunks --> do this # rows in chunk times
+             */
+
+            auto repetitions = 1;
+            if (access_pattern == "single_point")
+            {
+                repetitions = reference_segments[0]->size();
+            }
+            else if (access_pattern == "monotonic")
+            {
+                repetitions = monotonic_access_stride;
+            }
+
+            for (auto _ : state)
+            {
+
+                // todo: clear cache
+                // todo: start timer only after clearing cache!
+                for (int i = 0; i < repetitions; i++)
+                {
+
+                    for (const auto &segment : reference_segments)
+                    {
+                        ReferenceSegmentIterable<double, EraseReferencedSegmentType::No> reference_segment_iterable(*segment);
+                        reference_segment_iterable.with_iterators([](auto it, auto end)
+                                                                  {
+
+                            for (; it != end; ++it)
+                            {
+                                auto val = *it;
+                                benchmark::DoNotOptimize(val = *it);
+                                benchmark::ClobberMemory();
+                            } });
+                    }
+                }
+            }
+        };
+
+        // todo(ben): MAYBE measure both artificial segment and table scan
+        const std::vector<std::string> access_patterns = {
+            "sequential",
+            "random",
+            "monotonic",
+            "single_point"};
+        for (auto &device_name : devices)
+        {
+            for (const auto &access_pattern : access_patterns)
+            {
+                std::cout << "Benchmarking device: " << device_name << " with access pattern: " << access_pattern << std::endl;
+                // benchmark::RegisterBenchmark(("TieringCalibrationTableScan " + access_pattern + " " + device_name).c_str(), TieringCalibrationTableScan, device_name, access_pattern);
+                benchmark::RegisterBenchmark(("TieringCalibrationSegmentAccess " + access_pattern + " " + device_name).c_str(), TieringCalibrationSegmentAccess, device_name, access_pattern);
+            }
+        }
+
+        std::vector<std::string> arguments = {"TieringSelectionPlugin", "--benchmark_out=" + file_path, "--benchmark_out_format=json"};
+        std::vector<char *> argv;
+        for (const auto &arg : arguments)
+            argv.push_back((char *)arg.data());
+        argv.push_back(nullptr);
+
+        // don't count nullptr at the end
+        int argc = argv.size() - 1;
+        benchmark::Initialize(&argc, argv.data());
+        benchmark::RunSpecifiedBenchmarks();
+    }
 
     void apply_tiering_configuration(const std::string &json_configuration_path, size_t task_count = 0ul)
     {
@@ -46,7 +301,7 @@ namespace opossum
         for (const auto p : Hyrise::get().plugin_manager.loaded_plugins())
             std::cout << p << " plugin loaded." << std::endl;
 
-        std::unordered_map<std::tuple<std::string, ChunkID, ColumnID>, std::string, segment_key_hash> new_segment_locations = {};
+        SegmentLocations new_segment_locations = {};
 
         for (const auto &[table_name, segment_configs] : config["configuration"].items())
         {
@@ -62,29 +317,8 @@ namespace opossum
                 config_segment_count++;
                 std::cout << "Segment " << (int)config_segment_count << " with table_name: " << table_name << " chunk_id: " << chunk_id << " column_id: " << column_id << " should be on device_name: " << device_name << std::endl;
 
-                const auto segment_key = std::make_tuple(table_name, chunk_id, column_id);
-                new_segment_locations.emplace(segment_key, device_name);
-                if (TieringSelectionPlugin::segment_locations.contains(segment_key))
-                {
-                    if (TieringSelectionPlugin::segment_locations.at(segment_key) == device_name)
-                    {
-                        // std::cout << "Segment is already on the correct device. Skipping." << std::endl;
-                        continue;
-                    }
-                }
-                else
-                {
-                    // we assume the segment is in DRAM
-                    // either it was newly added (then it is in DRAM)
-                    // or the map is simply empty (because this is the first run)
-                    // continue;
-                }
+                move_segment_to_device(table, table_name, chunk_id, column_id, device_name, new_segment_locations);
 
-                auto resource = MemoryResourceManager::get().get_memory_resource_for_device(device_name);
-                const auto allocator = PolymorphicAllocator<void>{resource};
-                const auto &target_segment = table->get_chunk(chunk_id)->get_segment(column_id);
-                const auto migrated_segment = target_segment->copy_using_allocator(allocator);
-                table->get_chunk(chunk_id)->replace_segment(column_id, migrated_segment);
                 moved_segment_count++;
             }
         }
