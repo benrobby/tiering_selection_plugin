@@ -37,6 +37,9 @@
 #include <fstream>
 #include <nlohmann/json.hpp>
 #include <chrono>
+#include <vector>
+#include <algorithm>
+#include <ctime>
 
 namespace opossum
 {
@@ -62,7 +65,7 @@ namespace opossum
         return wrapper_map;
     }
 
-    void move_segment_to_device(std::shared_ptr<Table> table, const std::string &table_name, ChunkID chunk_id, ColumnID column_id, const std::string &device_name, SegmentLocations new_segment_locations)
+    void move_segment_to_device(std::shared_ptr<Table> table, const std::string &table_name, ChunkID chunk_id, ColumnID column_id, const std::string &device_name, SegmentLocations &new_segment_locations)
     {
         const auto segment_key = std::make_tuple(table_name, chunk_id, column_id);
         new_segment_locations.emplace(segment_key, device_name);
@@ -81,6 +84,8 @@ namespace opossum
             // continue;
         }
 
+        // std::cout << "Moving Segment " << table_name << " " << chunk_id << " " << column_id << " to " << device_name << std::endl;
+
         auto resource = MemoryResourceManager::get().get_memory_resource_for_device(device_name);
         const auto allocator = PolymorphicAllocator<void>{resource};
         const auto &target_segment = table->get_chunk(chunk_id)->get_segment(column_id);
@@ -93,7 +98,7 @@ namespace opossum
         std::cout << "Tiering calibration from plugin" << std::endl;
 
         auto &sm = Hyrise::get().storage_manager;
-        const auto scale_factor = 1.0f; // sufficient size so we don't just measure the caches
+        const auto scale_factor = 0.01f; // sufficient size so we don't just measure the caches
         const auto default_encoding = EncodingType::Dictionary;
 
         auto benchmark_config = BenchmarkConfig::get_default_config();
@@ -148,8 +153,16 @@ namespace opossum
 
         const auto monotonic_access_stride = 5; // todo determine a representative value
 
+        auto resource = MemoryResourceManager::get().get_memory_resource_for_device("hyrise-tiering/mrcl");
+        const auto allocator = PolymorphicAllocator<void>{resource};
+        pmr_vector<uint32_t> random_data(50 * 1024 * 1024 / sizeof(uint32_t), allocator);
+        std::srand(unsigned(std::time(nullptr)));
+        std::generate(random_data.begin(), random_data.end(), std::rand);
+
         auto TieringCalibrationSegmentAccess = [&](benchmark::State &state, const auto &device_name, const auto &access_pattern)
         {
+            std::cout << "device_name: " << device_name << " access_pattern: " << access_pattern << std::endl;
+
             SegmentLocations new_segment_locations = {};
             // move all table segments to device
             for (auto chunk_id = ChunkID{0}; chunk_id < table->chunk_count(); ++chunk_id)
@@ -158,7 +171,6 @@ namespace opossum
             }
             TieringSelectionPlugin::segment_locations = std::move(new_segment_locations);
 
-            // multiple access patterns
             std::vector<std::shared_ptr<ReferenceSegment>> reference_segments = {};
             for (auto chunk_id = ChunkID{0}; chunk_id < table->chunk_count(); ++chunk_id)
             {
@@ -191,7 +203,7 @@ namespace opossum
                 }
                 else if (access_pattern == "single_point")
                 {
-                    pos_list->push_back(RowID{chunk_id, 0});
+                    pos_list->push_back(RowID{chunk_id, std::rand() % segment->size()});
                 }
                 else
                 {
@@ -210,38 +222,40 @@ namespace opossum
              * - single_point: # chunks --> do this # rows in chunk times
              */
 
-            auto repetitions = 1;
-            if (access_pattern == "single_point")
-            {
-                repetitions = reference_segments[0]->size();
-            }
-            else if (access_pattern == "monotonic")
-            {
-                repetitions = monotonic_access_stride;
-            }
-
             for (auto _ : state)
             {
+                std::chrono::duration<double> elapsed_seconds = {};
 
                 // todo: clear cache
-                // todo: start timer only after clearing cache!
-                for (int i = 0; i < repetitions; i++)
-                {
+                // todo: validate timer
+                uint32_t random_data_sum;
+                benchmark::DoNotOptimize(random_data_sum = std::accumulate(random_data.begin(), random_data.end(), 0));
+                benchmark::ClobberMemory();
 
-                    for (const auto &segment : reference_segments)
-                    {
-                        ReferenceSegmentIterable<double, EraseReferencedSegmentType::No> reference_segment_iterable(*segment);
-                        reference_segment_iterable.with_iterators([](auto it, auto end)
-                                                                  {
+                auto start = std::chrono::high_resolution_clock::now();
+
+                for (const auto &segment : reference_segments)
+                {
+                    ReferenceSegmentIterable<double, EraseReferencedSegmentType::No> reference_segment_iterable(*segment);
+                    reference_segment_iterable.with_iterators([](auto it, auto end)
+                                                              {
 
                             for (; it != end; ++it)
                             {
-                                auto val = *it;
-                                benchmark::DoNotOptimize(val = *it);
+                                double val;
+                                benchmark::DoNotOptimize(val = it->value());
                                 benchmark::ClobberMemory();
                             } });
-                    }
                 }
+
+                auto end = std::chrono::high_resolution_clock::now();
+
+                auto elapsed_seconds_rep =
+                    std::chrono::duration_cast<std::chrono::duration<double>>(
+                        end - start);
+
+                elapsed_seconds += elapsed_seconds_rep;
+                state.SetIterationTime(elapsed_seconds.count());
             }
         };
 
@@ -255,9 +269,21 @@ namespace opossum
         {
             for (const auto &access_pattern : access_patterns)
             {
+
+                auto repetitions = 1;
+                if (access_pattern == "single_point")
+                {
+                    repetitions = table->get_chunk(ChunkID{0})->get_segment(column_id)->size();
+                }
+                else if (access_pattern == "monotonic")
+                {
+                    repetitions = monotonic_access_stride;
+                }
                 std::cout << "Benchmarking device: " << device_name << " with access pattern: " << access_pattern << std::endl;
                 // benchmark::RegisterBenchmark(("TieringCalibrationTableScan " + access_pattern + " " + device_name).c_str(), TieringCalibrationTableScan, device_name, access_pattern);
-                benchmark::RegisterBenchmark(("TieringCalibrationSegmentAccess " + access_pattern + " " + device_name).c_str(), TieringCalibrationSegmentAccess, device_name, access_pattern);
+                auto bm = benchmark::RegisterBenchmark(("TieringCalibrationSegmentAccess;" + access_pattern + ";" + device_name + ";" + std::to_string(repetitions) + ";").c_str(), TieringCalibrationSegmentAccess, device_name, access_pattern);
+                bm->UseManualTime();
+                // bm->MinTime(1.0);
             }
         }
 
@@ -271,6 +297,7 @@ namespace opossum
         int argc = argv.size() - 1;
         benchmark::Initialize(&argc, argv.data());
         benchmark::RunSpecifiedBenchmarks();
+        benchmark::Shutdown();
     }
 
     void apply_tiering_configuration(const std::string &json_configuration_path, size_t task_count = 0ul)
