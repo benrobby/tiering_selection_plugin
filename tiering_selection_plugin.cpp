@@ -65,7 +65,7 @@ namespace opossum
         return wrapper_map;
     }
 
-    void move_segment_to_device(std::shared_ptr<Table> table, const std::string &table_name, ChunkID chunk_id, ColumnID column_id, const std::string &device_name, SegmentLocations &new_segment_locations)
+    int move_segment_to_device(std::shared_ptr<Table> table, const std::string &table_name, ChunkID chunk_id, ColumnID column_id, const std::string &device_name, SegmentLocations &new_segment_locations)
     {
         const auto segment_key = std::make_tuple(table_name, chunk_id, column_id);
         new_segment_locations.emplace(segment_key, device_name);
@@ -74,7 +74,7 @@ namespace opossum
             if (TieringSelectionPlugin::segment_locations.at(segment_key) == device_name)
             {
                 // std::cout << "Segment is already on the correct device. Skipping." << std::endl;
-                return;
+                return 0;
             }
         }
         else
@@ -91,6 +91,7 @@ namespace opossum
         const auto &target_segment = table->get_chunk(chunk_id)->get_segment(column_id);
         const auto migrated_segment = target_segment->copy_using_allocator(allocator);
         table->get_chunk(chunk_id)->replace_segment(column_id, migrated_segment);
+        return 1;
     }
 
     void tiering_calibration(const std::string &file_path, std::vector<std::string> devices)
@@ -98,7 +99,7 @@ namespace opossum
         std::cout << "Tiering calibration from plugin" << std::endl;
 
         auto &sm = Hyrise::get().storage_manager;
-        const auto scale_factor = 0.01f; // sufficient size so we don't just measure the caches
+        const auto scale_factor = 0.1f; // sufficient size so we don't just measure the caches
         const auto default_encoding = EncodingType::Dictionary;
 
         auto benchmark_config = BenchmarkConfig::get_default_config();
@@ -165,11 +166,13 @@ namespace opossum
 
             SegmentLocations new_segment_locations = {};
             // move all table segments to device
+            int moved_segment_count = 0;
             for (auto chunk_id = ChunkID{0}; chunk_id < table->chunk_count(); ++chunk_id)
             {
-                move_segment_to_device(table, table_name, chunk_id, column_id, device_name, new_segment_locations);
+                moved_segment_count += move_segment_to_device(table, table_name, chunk_id, column_id, device_name, new_segment_locations);
             }
             TieringSelectionPlugin::segment_locations = std::move(new_segment_locations);
+            std::cout << "moved " << moved_segment_count << " segments to device (rest was already there)" << std::endl;
 
             std::vector<std::shared_ptr<ReferenceSegment>> reference_segments = {};
             for (auto chunk_id = ChunkID{0}; chunk_id < table->chunk_count(); ++chunk_id)
@@ -189,7 +192,7 @@ namespace opossum
                 {
                     for (auto i = ChunkOffset{0}; i < segment->size(); ++i)
                     {
-                        pos_list->push_back(RowID{chunk_id, i}); // todo(ben): what about other chunk?
+                        pos_list->push_back(RowID{chunk_id, i}); // todo(ben): what about other chunk? -> look at what martin said with the two access paths
                     }
                     std::random_shuffle(pos_list->begin(), pos_list->end());
                 }
@@ -224,8 +227,7 @@ namespace opossum
 
             for (auto _ : state)
             {
-                std::chrono::duration<double> elapsed_seconds = {};
-
+                // std::cout << "benchmark iteration start" << std::endl;
                 // todo: clear cache
                 // todo: validate timer
                 uint32_t random_data_sum;
@@ -250,11 +252,19 @@ namespace opossum
 
                 auto end = std::chrono::high_resolution_clock::now();
 
-                auto elapsed_seconds_rep =
+                auto elapsed_seconds =
                     std::chrono::duration_cast<std::chrono::duration<double>>(
                         end - start);
 
-                elapsed_seconds += elapsed_seconds_rep;
+                if (access_pattern == "single_point")
+                {
+                    elapsed_seconds *= 100; // remember to divide by this again, this is to speed up google benchmark (otherwise it does too many iterations!)
+                }
+                else if (access_pattern == "monotonic")
+                {
+                    elapsed_seconds *= 10; // remember to divide by this again, this is to speed up google benchmark (otherwise it does too many iterations!)
+                }
+
                 state.SetIterationTime(elapsed_seconds.count());
             }
         };
@@ -282,7 +292,7 @@ namespace opossum
                 std::cout << "Benchmarking device: " << device_name << " with access pattern: " << access_pattern << std::endl;
                 // benchmark::RegisterBenchmark(("TieringCalibrationTableScan " + access_pattern + " " + device_name).c_str(), TieringCalibrationTableScan, device_name, access_pattern);
                 auto bm = benchmark::RegisterBenchmark(("TieringCalibrationSegmentAccess;" + access_pattern + ";" + device_name + ";" + std::to_string(repetitions) + ";").c_str(), TieringCalibrationSegmentAccess, device_name, access_pattern);
-                bm->UseManualTime();
+                bm->UseManualTime(); // todo try to set max time?
                 // bm->MinTime(1.0);
             }
         }
