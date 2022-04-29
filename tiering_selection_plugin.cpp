@@ -99,7 +99,7 @@ namespace opossum
         std::cout << "Tiering calibration from plugin" << std::endl;
 
         auto &sm = Hyrise::get().storage_manager;
-        const auto scale_factor = 0.1f; // sufficient size so we don't just measure the caches
+        const auto scale_factor = 2.0f; // sufficient size so we don't just measure the caches
         const auto default_encoding = EncodingType::Dictionary;
 
         auto benchmark_config = BenchmarkConfig::get_default_config();
@@ -152,11 +152,11 @@ namespace opossum
         //     }
         // };
 
-        const auto monotonic_access_stride = 5; // todo determine a representative value
+        const auto monotonic_access_stride = 3; // todo determine a representative value
 
         auto resource = MemoryResourceManager::get().get_memory_resource_for_device("hyrise-tiering/mrcl");
         const auto allocator = PolymorphicAllocator<void>{resource};
-        pmr_vector<uint32_t> random_data(50 * 1024 * 1024 / sizeof(uint32_t), allocator);
+        pmr_vector<uint32_t> random_data(50 * 1024 * 1024 / sizeof(uint32_t), allocator); // size of umap buffer
         std::srand(unsigned(std::time(nullptr)));
         std::generate(random_data.begin(), random_data.end(), std::rand);
 
@@ -175,45 +175,78 @@ namespace opossum
             std::cout << "moved " << moved_segment_count << " segments to device (rest was already there)" << std::endl;
 
             std::vector<std::shared_ptr<ReferenceSegment>> reference_segments = {};
-            for (auto chunk_id = ChunkID{0}; chunk_id < table->chunk_count(); ++chunk_id)
+
+            if (access_pattern == "random_multiple_chunk")
             {
-                auto segment = table->get_chunk(chunk_id)->get_segment(column_id);
-
-                auto pos_list = std::make_shared<RowIDPosList>();
-
-                if (access_pattern == "sequential")
+                std::vector<RowID> all_positions = {};
+                for (auto chunk_id = ChunkID{0}; chunk_id < table->chunk_count(); ++chunk_id)
                 {
+                    auto segment = table->get_chunk(chunk_id)->get_segment(column_id);
+
                     for (auto i = ChunkOffset{0}; i < segment->size(); ++i)
                     {
-                        pos_list->push_back(RowID{chunk_id, i});
+                        all_positions.push_back(RowID{chunk_id, i});
                     }
-                }
-                else if (access_pattern == "random")
-                {
-                    for (auto i = ChunkOffset{0}; i < segment->size(); ++i)
-                    {
-                        pos_list->push_back(RowID{chunk_id, i}); // todo(ben): what about other chunk? -> look at what martin said with the two access paths
-                    }
-                    std::random_shuffle(pos_list->begin(), pos_list->end());
-                }
-                else if (access_pattern == "monotonic")
-                {
-                    // stride could also be std::rand() % (2 * monotonic_access_stride + 1)
-                    for (auto i = ChunkOffset{0}; i < segment->size(); i += monotonic_access_stride)
-                    {
-                        pos_list->push_back(RowID{chunk_id, i});
-                    }
-                }
-                else if (access_pattern == "single_point")
-                {
-                    pos_list->push_back(RowID{chunk_id, std::rand() % segment->size()});
-                }
-                else
-                {
-                    throw std::runtime_error("Unknown access pattern");
                 }
 
-                reference_segments.push_back(std::make_shared<ReferenceSegment>(table, column_id, pos_list));
+                std::random_shuffle(all_positions.begin(), all_positions.end());
+
+                size_t j = 0;
+                for (auto chunk_id = ChunkID{0}; chunk_id < table->chunk_count(); ++chunk_id)
+                {
+                    auto pos_list = std::make_shared<RowIDPosList>();
+                    auto segment = table->get_chunk(chunk_id)->get_segment(column_id);
+
+                    for (auto i = ChunkOffset{0}; i < segment->size(); ++i)
+                    {
+                        pos_list->push_back(RowID{all_positions[j].chunk_id, all_positions[j].chunk_offset});
+                        j += 1;
+                    }
+                    reference_segments.push_back(std::make_shared<ReferenceSegment>(table, column_id, pos_list));
+                }
+            }
+            else
+            {
+                for (auto chunk_id = ChunkID{0}; chunk_id < table->chunk_count(); ++chunk_id)
+                {
+                    auto segment = table->get_chunk(chunk_id)->get_segment(column_id);
+
+                    auto pos_list = std::make_shared<RowIDPosList>();
+
+                    if (access_pattern == "sequential")
+                    {
+                        for (auto i = ChunkOffset{0}; i < segment->size(); ++i)
+                        {
+                            pos_list->push_back(RowID{chunk_id, i});
+                        }
+                    }
+                    else if (access_pattern == "random")
+                    {
+                        for (auto i = ChunkOffset{0}; i < segment->size(); ++i)
+                        {
+                            pos_list->push_back(RowID{chunk_id, i});
+                        }
+                        std::random_shuffle(pos_list->begin(), pos_list->end());
+                    }
+                    else if (access_pattern == "monotonic")
+                    {
+                        // stride could also be std::rand() % (2 * monotonic_access_stride + 1)
+                        for (auto i = ChunkOffset{0}; i < segment->size(); i += monotonic_access_stride)
+                        {
+                            pos_list->push_back(RowID{chunk_id, i});
+                        }
+                    }
+                    else if (access_pattern == "single_point")
+                    {
+                        pos_list->push_back(RowID{chunk_id, std::rand() % segment->size()});
+                    }
+                    else
+                    {
+                        throw std::runtime_error("Unknown access pattern");
+                    }
+
+                    reference_segments.push_back(std::make_shared<ReferenceSegment>(table, column_id, pos_list));
+                }
             }
 
             /**
@@ -262,7 +295,7 @@ namespace opossum
                 }
                 else if (access_pattern == "monotonic")
                 {
-                    elapsed_seconds *= 10; // remember to divide by this again, this is to speed up google benchmark (otherwise it does too many iterations!)
+                    ; // elapsed_seconds *= 10; // remember to divide by this again, this is to speed up google benchmark (otherwise it does too many iterations!)
                 }
 
                 state.SetIterationTime(elapsed_seconds.count());
@@ -271,8 +304,9 @@ namespace opossum
 
         // todo(ben): MAYBE measure both artificial segment and table scan
         const std::vector<std::string> access_patterns = {
-            "sequential",
             "random",
+            "sequential",
+            "random_multiple_chunk",
             "monotonic",
             "single_point"};
         for (auto &device_name : devices)
@@ -292,8 +326,8 @@ namespace opossum
                 std::cout << "Benchmarking device: " << device_name << " with access pattern: " << access_pattern << std::endl;
                 // benchmark::RegisterBenchmark(("TieringCalibrationTableScan " + access_pattern + " " + device_name).c_str(), TieringCalibrationTableScan, device_name, access_pattern);
                 auto bm = benchmark::RegisterBenchmark(("TieringCalibrationSegmentAccess;" + access_pattern + ";" + device_name + ";" + std::to_string(repetitions) + ";").c_str(), TieringCalibrationSegmentAccess, device_name, access_pattern);
-                bm->UseManualTime(); // todo try to set max time?
-                // bm->MinTime(1.0);
+                bm->UseManualTime();
+                bm->MinTime(10.0); // max wallclock time should be 5 * mintime
             }
         }
 
