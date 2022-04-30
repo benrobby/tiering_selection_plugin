@@ -201,7 +201,7 @@ namespace opossum
                         pos_list->push_back(RowID{chunk_id, i});
                     }
                 }
-                else if (access_pattern == "random")
+                else if (access_pattern == "random_single_chunk")
                 {
                     for (auto i = ChunkOffset{0}; i < segment->size(); ++i)
                     {
@@ -274,7 +274,7 @@ namespace opossum
             TieringCalibrationSegmentAccess)
     {
         const std::vector<std::string> access_patterns = {
-            "random",
+            "random_single_chunk",
             "sequential",
             "random_multiple_chunk",
             "monotonic",
@@ -313,7 +313,7 @@ namespace opossum
         const auto monotonic_access_stride = 3; // todo determine a representative value
         const auto table_name = "lineitem";
         const auto column_id = ColumnID{6};
-        const auto benchmark_min_time = 10.0; // in seconds
+        const auto benchmark_min_time = 5.0; // in seconds
         const auto random_data_size_per_device_mb = 50;
 
         generate_data(scale_factor);
