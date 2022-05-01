@@ -146,12 +146,17 @@ namespace opossum
 
         auto command_strings = std::vector<std::string>{};
         boost::split(command_strings, command, boost::is_any_of(" "), boost::token_compress_on);
-        Assert(command_strings.size() >= 4,
-               "Expecting one param. Usage: RUN TIERING CALIBRATION <file> <device_1> <device_2> ...");
+        Assert(command_strings.size() >= 8,
+               "Expecting one param. Usage: RUN TIERING CALIBRATION <file> <scale_factor> <benchmark_min_time_seconds> <random_data_size_per_device_mb> <monotonic_access_stride> <device_1> <device_2> ...");
 
         const auto file_path_str = command_strings[3];
-        auto devices = std::vector<std::string>(command_strings.begin() + 4, command_strings.end());
-        tiering_calibration(file_path_str, devices);
+        const auto scale_factor = command_strings[4];
+        const auto benchmark_min_time_seconds = command_strings[5];
+        const auto random_data_size_per_device_mb = command_strings[6];
+        const auto monotonic_access_stride = command_strings[7];
+
+        auto devices = std::vector<std::string>(command_strings.begin() + 8, command_strings.end());
+        tiering_calibration(file_path_str, devices, std::stod(scale_factor), std::stod(benchmark_min_time_seconds), std::stoi(random_data_size_per_device_mb), std::stoi(monotonic_access_stride));
     }
 
     void handle_set_devices(const std::string command)

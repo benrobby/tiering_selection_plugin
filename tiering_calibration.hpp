@@ -265,7 +265,7 @@ namespace opossum
         ColumnID column_id,
         std::shared_ptr<Table> table,
         int monotonic_access_stride,
-        int benchmark_min_time,
+        int benchmark_min_time_seconds,
         std::function<void(benchmark::State &,
                            const std::string &,
                            const std::string &,
@@ -301,20 +301,17 @@ namespace opossum
 
                 auto bm = benchmark::RegisterBenchmark(ss.str().c_str(), TieringCalibrationSegmentAccess, device_name, access_pattern, reference_segments, runtime_multiplier);
                 bm->UseManualTime();
-                bm->MinTime(benchmark_min_time); // max wallclock time should be 5 * mintime
+                bm->MinTime(benchmark_min_time_seconds); // max wallclock time should be 5 * mintime
             }
         }
     }
 
-    void tiering_calibration(const std::string &file_path, const std::vector<std::string> &devices)
+    // scale factor should be sufficient size so we don't just measure the caches
+    void tiering_calibration(const std::string &file_path, const std::vector<std::string> &devices, const float scale_factor, const float benchmark_min_time_seconds, const int random_data_size_per_device_mb, const int monotonic_access_stride)
     {
         std::cout << "Tiering calibration from plugin" << std::endl;
-        const auto scale_factor = 2.0f;         // sufficient size so we don't just measure the caches
-        const auto monotonic_access_stride = 3; // todo determine a representative value
         const auto table_name = "lineitem";
         const auto column_id = ColumnID{6};
-        const auto benchmark_min_time = 5.0; // in seconds
-        const auto random_data_size_per_device_mb = 50;
 
         generate_data(scale_factor);
 
@@ -376,7 +373,7 @@ namespace opossum
         };
 
         // todo(ben): MAYBE measure both artificial segment and table scan
-        register_benchmarks(devices, column_id, table, monotonic_access_stride, benchmark_min_time, TieringCalibrationSegmentAccess);
+        register_benchmarks(devices, column_id, table, monotonic_access_stride, benchmark_min_time_seconds, TieringCalibrationSegmentAccess);
 
         std::vector<std::string> arguments = {"TieringSelectionPlugin", "--benchmark_out=" + file_path, "--benchmark_out_format=json"};
         std::vector<char *> argv;
