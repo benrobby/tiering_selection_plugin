@@ -3,6 +3,7 @@
 #include "storage/table.hpp"
 #include "scheduler/node_queue_scheduler.hpp"
 #include "storage/encoding_type.hpp"
+#include "storage/pos_lists/entire_chunk_pos_list.hpp"
 #include "sql/sql_pipeline_builder.hpp"
 #include "memory/memory_resource_manager.hpp"
 #include "memory/umap_jemalloc_memory_resource.hpp"
@@ -56,7 +57,7 @@ namespace opossum
         {
             if (TieringSelectionPlugin::segment_locations.at(segment_key) == device_name)
             {
-                // std::cout << "Segment is already on the correct device. Skipping." << std::endl;
+                std::cout << "Segment is already on the correct device. Skipping." << std::endl;
                 return 0;
             }
         }
@@ -67,7 +68,7 @@ namespace opossum
             // continue;
         }
 
-        // std::cout << "Moving Segment " << table_name << " " << chunk_id << " " << column_id << " to " << device_name << std::endl;
+        std::cout << "Moving Segment " << table_name << " " << chunk_id << " " << column_id << " to " << device_name << std::endl;
 
         auto resource = MemoryResourceManager::get().get_memory_resource_for_device(device_name);
         const auto allocator = PolymorphicAllocator<void>{resource};
@@ -192,17 +193,24 @@ namespace opossum
             {
                 auto segment = table->get_chunk(chunk_id)->get_segment(column_id);
 
-                auto pos_list = std::make_shared<RowIDPosList>();
-
                 if (access_pattern == "sequential")
                 {
-                    for (auto i = ChunkOffset{0}; i < segment->size(); ++i)
-                    {
-                        pos_list->push_back(RowID{chunk_id, i});
-                    }
+                    // todo EntireChunkPoslist
+                    // pos_list->guarantee_single_chunk();
+                    // for (auto i = ChunkOffset{0}; i < segment->size(); ++i)
+                    // {
+                    //     pos_list->push_back(RowID{chunk_id, i});
+                    // }
+                    auto entire_pos_list = std::make_shared<EntireChunkPosList>(chunk_id, segment->size());
+                    reference_segments.push_back(std::make_shared<ReferenceSegment>(table, column_id, entire_pos_list));
+                    continue;
                 }
-                else if (access_pattern == "random_single_chunk")
+
+                auto pos_list = std::make_shared<RowIDPosList>();
+
+                if (access_pattern == "random_single_chunk")
                 {
+                    pos_list->guarantee_single_chunk();
                     for (auto i = ChunkOffset{0}; i < segment->size(); ++i)
                     {
                         pos_list->push_back(RowID{chunk_id, i});
@@ -211,6 +219,7 @@ namespace opossum
                 }
                 else if (access_pattern == "monotonic")
                 {
+                    pos_list->guarantee_single_chunk();
                     // stride could also be std::rand() % (2 * monotonic_access_stride + 1)
                     for (auto i = ChunkOffset{0}; i < segment->size(); i += monotonic_access_stride)
                     {
@@ -219,6 +228,7 @@ namespace opossum
                 }
                 else if (access_pattern == "single_point")
                 {
+                    pos_list->guarantee_single_chunk();
                     pos_list->push_back(RowID{chunk_id, std::rand() % segment->size()});
                 }
                 else
@@ -350,7 +360,7 @@ namespace opossum
 
                 for (const auto &segment : reference_segments)
                 {
-                    ReferenceSegmentIterable<double, EraseReferencedSegmentType::No> reference_segment_iterable(*segment);
+                    ReferenceSegmentIterable<float, EraseReferencedSegmentType::No> reference_segment_iterable(*segment);
                     reference_segment_iterable.with_iterators([](auto it, auto end)
                                                               {
 
