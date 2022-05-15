@@ -160,29 +160,34 @@ namespace opossum
 
         if (access_pattern == "random_multiple_chunk")
         {
-            std::vector<RowID> all_positions = {};
+            std::vector<std::vector<RowID>> all_positions_per_chunk = {};
+            // for each segment shuffle one poslist
             for (auto chunk_id = ChunkID{0}; chunk_id < table->chunk_count(); ++chunk_id)
             {
-                auto segment = table->get_chunk(chunk_id)->get_segment(column_id);
+                std::vector<RowID> positions_for_chunk = {};
 
-                for (auto i = ChunkOffset{0}; i < segment->size(); ++i)
+                for (auto i = ChunkOffset{0}; i < table->get_chunk(chunk_id)->get_segment(column_id)->size(); i++)
                 {
-                    all_positions.push_back(RowID{chunk_id, i});
+                    positions_for_chunk.push_back(RowID{chunk_id, i});
                 }
+
+                std::random_shuffle(positions_for_chunk.begin(), positions_for_chunk.end());
+                all_positions_per_chunk.push_back(positions_for_chunk);
             }
 
-            std::random_shuffle(all_positions.begin(), all_positions.end());
-
-            size_t j = 0;
             for (auto chunk_id = ChunkID{0}; chunk_id < table->chunk_count(); ++chunk_id)
             {
                 auto pos_list = std::make_shared<RowIDPosList>();
-                auto segment = table->get_chunk(chunk_id)->get_segment(column_id);
-
-                for (auto i = ChunkOffset{0}; i < segment->size(); ++i)
+                for (auto i = ChunkOffset{0}; i < table->get_chunk(chunk_id)->get_segment(column_id)->size(); i += monotonic_access_stride)
                 {
-                    pos_list->push_back(RowID{all_positions[j].chunk_id, all_positions[j].chunk_offset});
-                    j += 1;
+                    // for each tuple (with stride though) get a random position. Make sure that they two subsequent tuples don't go to the same segment.
+                    auto positions = all_positions_per_chunk[i % all_positions_per_chunk.size()];
+                    auto position = positions[i % positions.size()];
+                    pos_list->push_back(RowID{position.chunk_id, position.chunk_offset});
+                    if (position.chunk_id > table->chunk_count())
+                    {
+                        std::cout << "adding chunk_id " << position.chunk_id << " chunk_offset " << position.chunk_offset << std::endl;
+                    }
                 }
                 reference_segments.push_back(std::make_shared<ReferenceSegment>(table, column_id, pos_list));
             }
@@ -309,6 +314,8 @@ namespace opossum
                 ss << std::to_string(num_tuples_scanned_per_iteration) << ";";
                 ss << std::to_string(runtime_multiplier) << ";";
 
+                std::cout << ss.str() << std::endl;
+
                 auto bm = benchmark::RegisterBenchmark(ss.str().c_str(), TieringCalibrationSegmentAccess, device_name, access_pattern, reference_segments, runtime_multiplier);
                 bm->UseManualTime();
                 bm->MinTime(benchmark_min_time_seconds); // max wallclock time should be 5 * mintime
@@ -357,9 +364,10 @@ namespace opossum
                 clear_caches(random_data_per_device);
 
                 auto start = std::chrono::high_resolution_clock::now();
-
+                int i = 0;
                 for (const auto &segment : reference_segments)
                 {
+                    // std::cout << "segment: " << i << std::endl;
                     ReferenceSegmentIterable<float, EraseReferencedSegmentType::No> reference_segment_iterable(*segment);
                     reference_segment_iterable.with_iterators([](auto it, auto end)
                                                               {
@@ -370,6 +378,8 @@ namespace opossum
                         benchmark::DoNotOptimize(val = it->value());
                         benchmark::ClobberMemory();
                     } });
+
+                    i++;
                 }
 
                 auto end = std::chrono::high_resolution_clock::now();
