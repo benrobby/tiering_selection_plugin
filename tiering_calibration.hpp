@@ -41,9 +41,12 @@
 #include <vector>
 #include <algorithm>
 #include <ctime>
+#include <thread>
+#include <iostream>
 
 namespace opossum
 {
+    std::atomic_bool stop_threads = false;
     using namespace opossum;                        // NOLINT
     using namespace opossum::expression_functional; // NOLINT
 
@@ -62,13 +65,11 @@ namespace opossum
             }
         }
         else
-        {
+
             // do not continue and rather copy the segment to dram again if it was initialized there
             // but now use the allocator that we use
-            // continue;
-        }
 
-        std::cout << "Moving Segment " << table_name << " " << chunk_id << " " << column_id << " to " << device_name << std::endl;
+            std::cout << "Moving Segment " << table_name << " " << chunk_id << " " << column_id << " to " << device_name << std::endl;
 
         auto resource = MemoryResourceManager::get().get_memory_resource_for_device(device_name);
         const auto allocator = PolymorphicAllocator<void>{resource};
@@ -324,7 +325,7 @@ namespace opossum
     }
 
     // scale factor should be sufficient size so we don't just measure the caches
-    void tiering_calibration(const std::string &file_path, const std::vector<std::string> &devices, const float scale_factor, const float benchmark_min_time_seconds, const int random_data_size_per_device_mb, const int monotonic_access_stride)
+    void tiering_calibration(const std::string &file_path, const std::vector<std::string> &devices, const float scale_factor, const float benchmark_min_time_seconds, const int random_data_size_per_device_mb, const int monotonic_access_stride, const int num_concurrent_threads)
     {
         std::cout << "Tiering calibration from plugin" << std::endl;
         const auto table_name = "lineitem";
@@ -363,6 +364,38 @@ namespace opossum
 
                 clear_caches(random_data_per_device);
 
+                std::vector<std::thread> threads;
+                for (int thread_id = 0; thread_id < num_concurrent_threads; thread_id++)
+                {
+                    threads.push_back(std::thread([=]()
+                                                  {
+                        // std::stringstream ss;
+                        // ss << "thread_id: " << thread_id << " started \n";
+                        // std::cout << ss.str();
+                        while (!stop_threads) {
+                            for (auto it = reference_segments.rbegin(); it != reference_segments.rend(); ++it)
+                            {
+                                const auto &segment = *it;
+                                if (stop_threads) {
+                                    // std::cout << "thread " << thread_id << " finished\n";
+                                    return;
+                                }
+                                // std::cout << "segment: " << i << std::endl;
+                                ReferenceSegmentIterable<float, EraseReferencedSegmentType::No> reference_segment_iterable(*segment);
+                                reference_segment_iterable.with_iterators([](auto it, auto end) {
+                                        for (; it != end; ++it) {
+                                            double val;
+                                            benchmark::DoNotOptimize(val = it->value());
+                                            benchmark::ClobberMemory();
+                                        }
+                                    }
+                                );
+                            }
+                        }
+                        // std::cout << "thread " << thread_id << " finished\n";
+                        return; }));
+                }
+
                 auto start = std::chrono::high_resolution_clock::now();
                 int i = 0;
                 for (const auto &segment : reference_segments)
@@ -381,8 +414,14 @@ namespace opossum
 
                     i++;
                 }
-
                 auto end = std::chrono::high_resolution_clock::now();
+
+                stop_threads = true;
+                for (auto &thread : threads)
+                {
+                    thread.join();
+                }
+                stop_threads = false;
 
                 auto elapsed_seconds =
                     std::chrono::duration_cast<std::chrono::duration<double>>(

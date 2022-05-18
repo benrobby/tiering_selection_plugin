@@ -146,17 +146,18 @@ namespace opossum
 
         auto command_strings = std::vector<std::string>{};
         boost::split(command_strings, command, boost::is_any_of(" "), boost::token_compress_on);
-        Assert(command_strings.size() >= 8,
-               "Expecting one param. Usage: RUN TIERING CALIBRATION <file> <scale_factor> <benchmark_min_time_seconds> <random_data_size_per_device_mb> <monotonic_access_stride> <device_1> <device_2> ...");
+        Assert(command_strings.size() >= 9,
+               "Expecting one param. Usage: RUN TIERING CALIBRATION <file> <scale_factor> <benchmark_min_time_seconds> <random_data_size_per_device_mb> <monotonic_access_stride> <num_concurrent_threads> <device_1> <device_2> ...");
 
         const auto file_path_str = command_strings[3];
         const auto scale_factor = command_strings[4];
         const auto benchmark_min_time_seconds = command_strings[5];
         const auto random_data_size_per_device_mb = command_strings[6];
         const auto monotonic_access_stride = command_strings[7];
+        const auto num_concurrent_threads = command_strings[8];
 
-        auto devices = std::vector<std::string>(command_strings.begin() + 8, command_strings.end());
-        tiering_calibration(file_path_str, devices, std::stod(scale_factor), std::stod(benchmark_min_time_seconds), std::stoi(random_data_size_per_device_mb), std::stoi(monotonic_access_stride));
+        auto devices = std::vector<std::string>(command_strings.begin() + 9, command_strings.end());
+        tiering_calibration(file_path_str, devices, std::stod(scale_factor), std::stod(benchmark_min_time_seconds), std::stoi(random_data_size_per_device_mb), std::stoi(monotonic_access_stride), std::stoi(num_concurrent_threads));
     }
 
     void handle_set_devices(const std::string command)
