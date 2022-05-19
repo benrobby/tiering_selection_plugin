@@ -286,6 +286,7 @@ namespace opossum
                            const std::string &,
                            const std::string &,
                            const std::vector<std::shared_ptr<ReferenceSegment>> &,
+                           const std::vector<std::shared_ptr<ReferenceSegment>> &,
                            int)>
             TieringCalibrationSegmentAccess)
     {
@@ -303,6 +304,10 @@ namespace opossum
 
                 std::vector<std::shared_ptr<ReferenceSegment>> reference_segments = {};
                 get_reference_segments_with_poslist_for_access_pattern(access_pattern, column_id, table, monotonic_access_stride, reference_segments);
+
+                std::vector<std::shared_ptr<ReferenceSegment>> concurrent_threads_reference_segments = {};
+                get_reference_segments_with_poslist_for_access_pattern("sequential", ColumnID{5}, table, monotonic_access_stride, concurrent_threads_reference_segments);
+
                 auto num_tuples_scanned_per_iteration = get_num_tuples_per_iteration(reference_segments);
                 auto runtime_multiplier = get_access_pattern_runtime_multiplicator_for_g_benchmark(access_pattern);
 
@@ -317,7 +322,7 @@ namespace opossum
 
                 std::cout << ss.str() << std::endl;
 
-                auto bm = benchmark::RegisterBenchmark(ss.str().c_str(), TieringCalibrationSegmentAccess, device_name, access_pattern, reference_segments, runtime_multiplier);
+                auto bm = benchmark::RegisterBenchmark(ss.str().c_str(), TieringCalibrationSegmentAccess, device_name, access_pattern, reference_segments, concurrent_threads_reference_segments, runtime_multiplier);
                 bm->UseManualTime();
                 bm->MinTime(benchmark_min_time_seconds); // max wallclock time should be 5 * mintime
             }
@@ -344,7 +349,7 @@ namespace opossum
         std::vector<pmr_vector<uint32_t>> random_data_per_device = {};
         generate_random_data_for_devices(devices, random_data_per_device, random_data_size_per_device_mb);
 
-        auto TieringCalibrationSegmentAccess = [&](benchmark::State &state, const std::string &device_name, const std::string &access_pattern, const std::vector<std::shared_ptr<ReferenceSegment>> &reference_segments, int runtime_multiplier)
+        auto TieringCalibrationSegmentAccess = [&](benchmark::State &state, const std::string &device_name, const std::string &access_pattern, const std::vector<std::shared_ptr<ReferenceSegment>> &reference_segments, const std::vector<std::shared_ptr<ReferenceSegment>> &concurrent_thread_reference_segments, int runtime_multiplier)
         {
             std::cout << "device_name: " << device_name << " access_pattern: " << access_pattern << std::endl;
             move_segments_to_device(device_name, table_name, table, column_id);
@@ -373,7 +378,7 @@ namespace opossum
                         // ss << "thread_id: " << thread_id << " started \n";
                         // std::cout << ss.str();
                         while (!stop_threads) {
-                            for (auto it = reference_segments.rbegin(); it != reference_segments.rend(); ++it)
+                            for (auto it = concurrent_thread_reference_segments.rbegin(); it != concurrent_thread_reference_segments.rend(); ++it)
                             {
                                 const auto &segment = *it;
                                 if (stop_threads) {
@@ -381,6 +386,7 @@ namespace opossum
                                     return;
                                 }
                                 // std::cout << "segment: " << i << std::endl;
+                                // TODO READ OTHER SEGMENTS
                                 ReferenceSegmentIterable<float, EraseReferencedSegmentType::No> reference_segment_iterable(*segment);
                                 reference_segment_iterable.with_iterators([](auto it, auto end) {
                                         for (; it != end; ++it) {
