@@ -272,6 +272,10 @@ namespace opossum
         {
             return 5;
         }
+        else if (access_pattern == "random_multiple_chunk")
+        {
+            return 100;
+        }
 
         return 1;
     }
