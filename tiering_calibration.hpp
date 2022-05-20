@@ -291,9 +291,19 @@ namespace opossum
                            const std::string &,
                            const std::vector<std::shared_ptr<ReferenceSegment>> &,
                            const std::vector<std::shared_ptr<ReferenceSegment>> &,
-                           int)>
+                           int,
+                           ColumnID)>
             TieringCalibrationSegmentAccess)
     {
+
+        auto datatype = table->column_data_type(column_id);
+        std::stringstream ss;
+        ss << datatype;
+        auto datatype_string = ss.str();
+
+        std::cout << "datatype for column "
+                  << column_id << " : " << datatype_string << std::endl;
+
         const std::vector<std::string> access_patterns = {
             "random_single_chunk",
             "sequential",
@@ -304,7 +314,7 @@ namespace opossum
         {
             for (const auto &access_pattern : access_patterns)
             {
-                std::cout << "Registering benchmark for device: " << device_name << " with access pattern: " << access_pattern << std::endl;
+                std::cout << "Registering benchmark for device: " << device_name << " with access pattern: " << access_pattern << " and datatype: " << datatype_string << std::endl;
 
                 std::vector<std::shared_ptr<ReferenceSegment>> reference_segments = {};
                 get_reference_segments_with_poslist_for_access_pattern(access_pattern, column_id, table, monotonic_access_stride, reference_segments);
@@ -323,10 +333,11 @@ namespace opossum
                 ss << device_name << ";";
                 ss << std::to_string(num_tuples_scanned_per_iteration) << ";";
                 ss << std::to_string(runtime_multiplier) << ";";
+                ss << datatype_string << ";";
 
                 std::cout << ss.str() << std::endl;
 
-                auto bm = benchmark::RegisterBenchmark(ss.str().c_str(), TieringCalibrationSegmentAccess, device_name, access_pattern, reference_segments, concurrent_threads_reference_segments, runtime_multiplier);
+                auto bm = benchmark::RegisterBenchmark(ss.str().c_str(), TieringCalibrationSegmentAccess, device_name, access_pattern, reference_segments, concurrent_threads_reference_segments, runtime_multiplier, column_id);
                 bm->UseManualTime();
                 bm->MinTime(benchmark_min_time_seconds); // max wallclock time should be 5 * mintime
             }
@@ -338,24 +349,20 @@ namespace opossum
     {
         std::cout << "Tiering calibration from plugin" << std::endl;
         const auto table_name = "lineitem";
-        const auto column_id = ColumnID{6};
 
         generate_data(scale_factor);
 
         auto &sm = Hyrise::get().storage_manager;
         std::map<std::string, std::shared_ptr<TableWrapper>> _table_wrapper_map = create_table_wrappers(sm);
         auto table = sm.get_table(table_name);
-        auto datatype = table->column_data_type(column_id);
-        auto table_wrapper = _table_wrapper_map.at(table_name);
 
-        std::cout << "datatype for column 6: " << datatype << std::endl;
-
-        std::vector<pmr_vector<uint32_t>> random_data_per_device = {};
+        std::vector<pmr_vector<uint32_t>>
+            random_data_per_device = {};
         generate_random_data_for_devices(devices, random_data_per_device, random_data_size_per_device_mb);
 
-        auto TieringCalibrationSegmentAccess = [&](benchmark::State &state, const std::string &device_name, const std::string &access_pattern, const std::vector<std::shared_ptr<ReferenceSegment>> &reference_segments, const std::vector<std::shared_ptr<ReferenceSegment>> &concurrent_thread_reference_segments, int runtime_multiplier)
+        auto TieringCalibrationSegmentAccess = [&](benchmark::State &state, const std::string &device_name, const std::string &access_pattern, const std::vector<std::shared_ptr<ReferenceSegment>> &reference_segments, const std::vector<std::shared_ptr<ReferenceSegment>> &concurrent_thread_reference_segments, int runtime_multiplier, ColumnID column_id)
         {
-            std::cout << "device_name: " << device_name << " access_pattern: " << access_pattern << std::endl;
+            std::cout << "device_name: " << device_name << " access_pattern: " << access_pattern << " column id: " << column_id << std::endl;
             move_segments_to_device(device_name, table_name, table, column_id);
 
             /**
@@ -442,7 +449,9 @@ namespace opossum
         };
 
         // todo(ben): MAYBE measure both artificial segment and table scan
-        register_benchmarks(devices, column_id, table, monotonic_access_stride, benchmark_min_time_seconds, TieringCalibrationSegmentAccess);
+
+        register_benchmarks(devices, ColumnID{6}, table, monotonic_access_stride, benchmark_min_time_seconds, TieringCalibrationSegmentAccess);
+        register_benchmarks(devices, ColumnID{15}, table, monotonic_access_stride, benchmark_min_time_seconds, TieringCalibrationSegmentAccess);
 
         std::vector<std::string> arguments = {"TieringSelectionPlugin", "--benchmark_out=" + file_path, "--benchmark_out_format=json"};
         std::vector<char *> argv;
