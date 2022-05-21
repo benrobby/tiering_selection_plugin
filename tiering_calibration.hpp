@@ -179,7 +179,7 @@ namespace opossum
             for (auto chunk_id = ChunkID{0}; chunk_id < table->chunk_count(); ++chunk_id)
             {
                 auto pos_list = std::make_shared<RowIDPosList>();
-                for (auto i = ChunkOffset{0}; i < table->get_chunk(chunk_id)->get_segment(column_id)->size(); i += 100 * monotonic_access_stride)
+                for (auto i = ChunkOffset{0}; i < table->get_chunk(chunk_id)->get_segment(column_id)->size() / 1000; i++)
                 {
                     // for each tuple (with stride though) get a random position. Make sure that they two subsequent tuples don't go to the same segment.
                     auto positions = all_positions_per_chunk[i % all_positions_per_chunk.size()];
