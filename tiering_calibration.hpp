@@ -179,7 +179,7 @@ namespace opossum
             for (auto chunk_id = ChunkID{0}; chunk_id < table->chunk_count(); ++chunk_id)
             {
                 auto pos_list = std::make_shared<RowIDPosList>();
-                for (auto i = ChunkOffset{0}; i < table->get_chunk(chunk_id)->get_segment(column_id)->size(); i += monotonic_access_stride)
+                for (auto i = ChunkOffset{0}; i < table->get_chunk(chunk_id)->get_segment(column_id)->size(); i += 100 * monotonic_access_stride)
                 {
                     // for each tuple (with stride though) get a random position. Make sure that they two subsequent tuples don't go to the same segment.
                     auto positions = all_positions_per_chunk[i % all_positions_per_chunk.size()];
@@ -327,6 +327,29 @@ namespace opossum
 
                 // benchmark::RegisterBenchmark(("TieringCalibrationTableScan " + access_pattern + " " + device_name).c_str(), TieringCalibrationTableScan, device_name, access_pattern);
 
+                int bytes_per_value;
+                if (datatype_string == "string")
+                {
+                    std::vector<std::shared_ptr<ReferenceSegment>> seq_reference_segments = {};
+                    get_reference_segments_with_poslist_for_access_pattern("sequential", column_id, table, monotonic_access_stride, seq_reference_segments);
+
+                    ReferenceSegmentIterable<opossum::pmr_string, EraseReferencedSegmentType::No> reference_segment_iterable(*seq_reference_segments[0]);
+                    reference_segment_iterable.with_iterators([&](auto it, auto end)
+                                                              {
+                        int i = 0;
+                        bytes_per_value = 0;
+                        for (; it != end; ++it)
+                        {
+                            i++;
+                            bytes_per_value += it->value().size();
+                        }
+                        bytes_per_value /= i; });
+                }
+                else
+                {
+                    bytes_per_value = sizeof(float);
+                }
+
                 std::stringstream ss;
                 ss << "TieringCalibrationSegmentAccess;";
                 ss << access_pattern << ";";
@@ -334,6 +357,7 @@ namespace opossum
                 ss << std::to_string(num_tuples_scanned_per_iteration) << ";";
                 ss << std::to_string(runtime_multiplier) << ";";
                 ss << datatype_string << ";";
+                ss << bytes_per_value << ";";
 
                 std::cout << ss.str() << std::endl;
 
@@ -397,16 +421,21 @@ namespace opossum
                                     return;
                                 }
                                 // std::cout << "segment: " << i << std::endl;
-                                // TODO READ OTHER SEGMENTS
-                                ReferenceSegmentIterable<float, EraseReferencedSegmentType::No> reference_segment_iterable(*segment);
-                                reference_segment_iterable.with_iterators([](auto it, auto end) {
-                                        for (; it != end; ++it) {
-                                            double val;
-                                            benchmark::DoNotOptimize(val = it->value());
-                                            benchmark::ClobberMemory();
-                                        }
-                                    }
-                                );
+                                // resolve segment type was a hassle
+
+                                resolve_data_type(segment->data_type(), [&](auto type)
+                                                    { using SegmentDataType = typename decltype(type)::type;
+
+                                        ReferenceSegmentIterable<SegmentDataType, EraseReferencedSegmentType::No> reference_segment_iterable(*segment);
+                                        reference_segment_iterable.with_iterators([](auto it, auto end) {
+                                                SegmentDataType val;
+                                                for (; it != end; ++it) {
+                                                    benchmark::DoNotOptimize(val = it->value());
+                                                    benchmark::ClobberMemory();
+                                                }
+                                            }
+                                        );
+                                });
                             }
                         }
                         // std::cout << "thread " << thread_id << " finished\n";
@@ -417,19 +446,20 @@ namespace opossum
                 int i = 0;
                 for (const auto &segment : reference_segments)
                 {
+                    resolve_data_type(segment->data_type(), [&](auto type)
+                                      {
+                        using SegmentDataType = typename decltype(type)::type;
+                        ReferenceSegmentIterable<SegmentDataType, EraseReferencedSegmentType::No> reference_segment_iterable(*segment);
+                        reference_segment_iterable.with_iterators([&](auto it, auto end) {
+                                SegmentDataType val;
+                                for (; it != end; ++it) {
+                                    benchmark::DoNotOptimize(val = it->value());
+                                    benchmark::ClobberMemory();
+                                }
+                                i++;
+                            }
+                        ); });
                     // std::cout << "segment: " << i << std::endl;
-                    ReferenceSegmentIterable<float, EraseReferencedSegmentType::No> reference_segment_iterable(*segment);
-                    reference_segment_iterable.with_iterators([](auto it, auto end)
-                                                              {
-
-                    for (; it != end; ++it)
-                    {
-                        double val;
-                        benchmark::DoNotOptimize(val = it->value());
-                        benchmark::ClobberMemory();
-                    } });
-
-                    i++;
                 }
                 auto end = std::chrono::high_resolution_clock::now();
 
