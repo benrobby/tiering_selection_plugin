@@ -121,10 +121,10 @@ namespace opossum
         std::srand(unsigned(std::time(nullptr)));
         for (const auto &device_name : devices)
         {
-            if (device_name == "DRAM")
-            {
-                continue;
-            }
+            // if (device_name == "DRAM")
+            // {
+            //     continue;
+            // }
             auto resource = MemoryResourceManager::get().get_memory_resource_for_device(device_name);
             const auto allocator = PolymorphicAllocator<void>{resource};
             random_data_per_device.emplace_back(random_data_size_mb * 1024 * 1024 / sizeof(uint32_t), allocator); // size of umap buffer
