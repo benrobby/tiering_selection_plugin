@@ -457,6 +457,7 @@ namespace opossum
                                 SegmentDataType val;
                                 for (; it != end; ++it) {
                                     benchmark::DoNotOptimize(val = it->value());
+                                    benchmark::DoNotOptimize(val = val + val);
                                     benchmark::ClobberMemory();
                                 }
                                 i++;
