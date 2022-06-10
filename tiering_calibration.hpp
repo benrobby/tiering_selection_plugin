@@ -276,6 +276,14 @@ namespace opossum
         {
             return 100;
         }
+        else if (access_pattern == "random_single_chunk")
+        {
+            return 10;
+        }
+        else if (access_pattern == "sequential")
+        {
+            return 2;
+        }
 
         return 1;
     }
