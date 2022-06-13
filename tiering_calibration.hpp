@@ -501,7 +501,7 @@ namespace opossum
 
         // todo(ben): MAYBE measure both artificial segment and table scan
 
-        register_benchmarks(devices, ColumnID{6}, table, monotonic_access_stride, benchmark_min_time_seconds, TieringCalibrationSegmentAccess);
+        // register_benchmarks(devices, ColumnID{6}, table, monotonic_access_stride, benchmark_min_time_seconds, TieringCalibrationSegmentAccess);
         register_benchmarks(devices, ColumnID{15}, table, monotonic_access_stride, benchmark_min_time_seconds, TieringCalibrationSegmentAccess);
 
         std::vector<std::string> arguments = {"TieringSelectionPlugin", "--benchmark_out=" + file_path, "--benchmark_out_format=json"};
