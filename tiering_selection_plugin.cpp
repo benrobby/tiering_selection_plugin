@@ -168,10 +168,11 @@ namespace opossum
 
         auto command_strings = std::vector<std::string>{};
         boost::split(command_strings, command, boost::is_any_of(" "), boost::token_compress_on);
-        Assert(command_strings.size() >= 2,
-               "Expecting zero or more param. Usage: SET DEVICES <device_names>");
+        Assert(command_strings.size() >= 3,
+               "Expecting zero or more param. Usage: SET DEVICES <umap_buf_size> <device_names>");
 
-        MemoryResourceManager::devices = std::vector<std::string>(command_strings.begin() + 2, command_strings.end());
+        MemoryResourceManager::umap_memory_resource_buf_size_bytes = std::stoi(command_strings[2]);
+        MemoryResourceManager::devices = std::vector<std::string>(command_strings.begin() + 3, command_strings.end());
     }
 } // namespace opossum
 
