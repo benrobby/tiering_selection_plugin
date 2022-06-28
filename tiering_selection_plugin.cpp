@@ -32,6 +32,9 @@
 #include "logical_query_plan/projection_node.hpp"
 #include "storage/reference_segment/reference_segment_iterable.hpp"
 #include "resolve_type.hpp"
+#include "visualization/pqp_visualizer.hpp"
+#include "visualization/lqp_visualizer.hpp"
+#include "sql/sql_pipeline_builder.hpp"
 
 #include <benchmark/benchmark.h>
 #include <boost/algorithm/string.hpp>
@@ -48,6 +51,22 @@ namespace opossum
     using namespace opossum::expression_functional; // NOLINT
 
     using SegmentLocations = std::unordered_map<std::tuple<std::string, ChunkID, ColumnID>, std::string, segment_key_hash>;
+
+    void visualize_query(const std::string &query, std::string conf_name, std::string query_id, std::string output_dir)
+    {
+        auto pipeline = SQLPipelineBuilder{query}.create_pipeline();
+        const auto [pipeline_status, result_table] = pipeline.get_result_table();
+        Assert(pipeline_status == SQLPipelineStatus::Success, "Unexpected pipeline status");
+
+        const auto &lqps = pipeline.get_optimized_logical_plans();
+        const auto &pqps = pipeline.get_physical_plans();
+
+        GraphvizConfig graphviz_config;
+        graphviz_config.format = "png";
+        std::string path = output_dir + "/" + conf_name + "_" + query_id;
+        PQPVisualizer{graphviz_config, {}, {}, {}}.visualize(pqps, path + "_pqp.png");
+        LQPVisualizer{graphviz_config, {}, {}, {}}.visualize(lqps, path + "_lqp.png");
+    }
 
     void apply_tiering_configuration(const std::string &json_configuration_path, size_t task_count = 0ul)
     {
@@ -174,6 +193,25 @@ namespace opossum
         MemoryResourceManager::umap_memory_resource_buf_size_bytes = std::stoi(command_strings[2]);
         MemoryResourceManager::devices = std::vector<std::string>(command_strings.begin() + 3, command_strings.end());
     }
+
+    void handle_visualize_query(const std::string command)
+    {
+        std::cout << "visualize query" << std::endl;
+        auto command_strings = std::vector<std::string>{};
+        boost::split(command_strings, command, boost::is_any_of(";"), boost::token_compress_on);
+        Assert(command_strings.size() == 5,
+               "Expecting the following params. Usage: VIS_QUERY;<query_id>;<test_id>;<query_tmp_file_name>;<output_dir>");
+        const auto query_id = command_strings[1];
+        const auto test_id = command_strings[2];
+        const auto query_tmp_file_name = command_strings[3];
+        const auto output_dir = command_strings[4];
+
+        std::ifstream query_stream(query_tmp_file_name);
+        std::stringstream buffer;
+        buffer << query_stream.rdbuf();
+        const auto query_string = buffer.str();
+        visualize_query(query_string, test_id, query_id, output_dir);
+    }
 } // namespace opossum
 
 namespace opossum
@@ -207,6 +245,10 @@ namespace opossum
         else if (command.starts_with("SET DEVICES "))
         {
             handle_set_devices(command);
+        }
+        else if (command.starts_with("VIS_QUERY;"))
+        {
+            handle_visualize_query(command);
         }
         else
         {
