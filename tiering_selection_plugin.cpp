@@ -61,11 +61,15 @@ namespace opossum
         const auto &lqps = pipeline.get_optimized_logical_plans();
         const auto &pqps = pipeline.get_physical_plans();
 
-        GraphvizConfig graphviz_config;
-        graphviz_config.format = "png";
+        GraphvizConfig png_config;
+        png_config.format = "png";
+        GraphvizConfig svg_config;
+        svg_config.format = "png";
         std::string path = output_dir + "/" + conf_name + "_" + query_id;
-        PQPVisualizer{graphviz_config, {}, {}, {}}.visualize(pqps, path + "_pqp.png");
-        LQPVisualizer{graphviz_config, {}, {}, {}}.visualize(lqps, path + "_lqp.png");
+        PQPVisualizer{png_config, {}, {}, {}}.visualize(pqps, path + "_pqp.png");
+        PQPVisualizer{svg_config, {}, {}, {}}.visualize(pqps, path + "_pqp.svg");
+        LQPVisualizer{png_config, {}, {}, {}}.visualize(lqps, path + "_lqp.png");
+        LQPVisualizer{svg_config, {}, {}, {}}.visualize(lqps, path + "_lqp.svg");
     }
 
     void apply_tiering_configuration(const std::string &json_configuration_path, size_t task_count = 0ul)
