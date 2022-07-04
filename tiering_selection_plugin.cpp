@@ -64,7 +64,7 @@ namespace opossum
         GraphvizConfig png_config;
         png_config.format = "png";
         GraphvizConfig svg_config;
-        svg_config.format = "png";
+        svg_config.format = "svg";
         std::string path = output_dir + "/" + conf_name + "_" + query_id;
         PQPVisualizer{png_config, {}, {}, {}}.visualize(pqps, path + "_pqp.png");
         PQPVisualizer{svg_config, {}, {}, {}}.visualize(pqps, path + "_pqp.svg");
