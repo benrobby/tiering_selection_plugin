@@ -20,6 +20,7 @@ include_directories(                                                            
     ${PROJECT_SOURCE_DIR}/hyrise-tiering/src/lib/                                                           #
     ${PROJECT_SOURCE_DIR}/hyrise-tiering/third_party/sql-parser/src
     ${PROJECT_SOURCE_DIR}/hyrise-tiering/src/benchmarklib/                                                #
+    /home/Ben.Hurdelhey/local/include                                                #
     ${TBB_INCLUDE_DIR}                                                                              #
     ${Boost_INCLUDE_DIR}                                                                           #
 
@@ -37,7 +38,7 @@ include_directories(                                                            
 #
 # Global flags and include directories                                                              #
 add_compile_options(-std=c++17 -pthread -Wall -Wextra -pedantic -Werror -Wno-unused-parameter       #
--Wno-unknown-pragmas)                                           #
+-Wno-unknown-pragmas -Wno-unused-function)                                           #
                                                                                                     #
 #####################################################################################################
 
