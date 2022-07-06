@@ -44,6 +44,7 @@
 #include <vector>
 #include <algorithm>
 #include <ctime>
+#include <umap/RegionManager.hpp>
 
 namespace opossum
 {
@@ -194,7 +195,7 @@ namespace opossum
         Assert(command_strings.size() >= 3,
                "Expecting zero or more param. Usage: SET DEVICES <umap_buf_size> <device_names>");
 
-        MemoryResourceManager::umap_memory_resource_buf_size_bytes = std::stoi(command_strings[2]);
+        MemoryResourceManager::umap_memory_resource_buf_size_bytes = std::stol(command_strings[2]);
         MemoryResourceManager::devices = std::vector<std::string>(command_strings.begin() + 3, command_strings.end());
     }
 
@@ -215,6 +216,17 @@ namespace opossum
         buffer << query_stream.rdbuf();
         const auto query_string = buffer.str();
         visualize_query(query_string, test_id, query_id, output_dir);
+    }
+
+    void handle_clear_umap_buffer(const std::string command)
+    {
+        std::cout << "clear umap buffer" << std::endl;
+
+        auto &rm = Umap::RegionManager::getInstance();
+
+        std::cout << "buffer status: " << rm.get_buffer_h() << std::endl;
+        rm.get_evict_manager()->EvictAll();
+        std::cout << "buffer status: " << rm.get_buffer_h() << std::endl;
     }
 } // namespace opossum
 
@@ -253,6 +265,10 @@ namespace opossum
         else if (command.starts_with("VIS_QUERY;"))
         {
             handle_visualize_query(command);
+        }
+        else if (command.starts_with("CLEAR_UMAP_BUFFER"))
+        {
+            handle_clear_umap_buffer(command);
         }
         else
         {
