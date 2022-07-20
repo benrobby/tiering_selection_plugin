@@ -44,7 +44,6 @@
 #include <vector>
 #include <algorithm>
 #include <ctime>
-#include <umap/RegionManager.hpp>
 
 namespace opossum
 {
@@ -222,11 +221,11 @@ namespace opossum
     {
         std::cout << "clear umap buffer" << std::endl;
 
-        auto &rm = Umap::RegionManager::getInstance();
+        // auto &rm = Umap::RegionManager::getInstance();
 
-        std::cout << "buffer status: " << rm.get_buffer_h() << std::endl;
-        rm.get_evict_manager()->EvictAll();
-        std::cout << "buffer status: " << rm.get_buffer_h() << std::endl;
+        // std::cout << "buffer status: " << rm.get_buffer_h() << std::endl;
+        // rm.get_evict_manager()->EvictAll();
+        // std::cout << "buffer status: " << rm.get_buffer_h() << std::endl;
     }
 } // namespace opossum
 
