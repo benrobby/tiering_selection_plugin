@@ -282,17 +282,18 @@ namespace opossum
         }
         else if (access_pattern == "random_single_chunk")
         {
-            multiplicator = 10;
+            multiplicator = 100;
         }
         else if (access_pattern == "sequential")
         {
             multiplicator = 2;
         }
 
-        if (device_name != "DRAM")
-        {
-            multiplicator *= 10;
-        }
+        // if (device_name != "DRAM")
+        // {
+        //     multiplicator *= 10;
+        // }
+        multiplicator *= 10;
 
         return multiplicator;
     }
@@ -322,11 +323,12 @@ namespace opossum
                   << column_id << " : " << datatype_string << std::endl;
 
         const std::vector<std::string> access_patterns = {
-            "random_single_chunk",
             "sequential",
-            "random_multiple_chunk",
-            "monotonic",
-            "single_point"};
+            // "random_single_chunk",
+            // "random_multiple_chunk",
+            // "monotonic",
+            // "single_point",
+        };
         for (auto &device_name : devices)
         {
             for (const auto &access_pattern : access_patterns)
@@ -386,7 +388,7 @@ namespace opossum
     }
 
     // scale factor should be sufficient size so we don't just measure the caches
-    void tiering_calibration(const std::string &file_path, const std::vector<std::string> &devices, const float scale_factor, const float benchmark_min_time_seconds, const int random_data_size_per_device_mb, const int monotonic_access_stride, const int num_concurrent_threads, const bool use_multithreaded_calibration)
+    void tiering_calibration(const std::string &file_path, const std::vector<std::string> &devices, const float scale_factor, const float benchmark_min_time_seconds, const int random_data_size_per_device_mb, const int monotonic_access_stride, const int num_concurrent_threads, const bool use_multithreaded_calibration, std::string modes)
     {
         std::cout << "Tiering calibration from plugin" << std::endl;
         const auto table_name = "lineitem";
@@ -499,10 +501,15 @@ namespace opossum
             }
         };
 
-        // todo(ben): MAYBE measure both artificial segment and table scan
+        if (modes.find("FLOAT") != std::string::npos)
+        {
+            register_benchmarks(devices, ColumnID{6}, table, monotonic_access_stride, benchmark_min_time_seconds, TieringCalibrationSegmentAccess);
+        }
 
-        register_benchmarks(devices, ColumnID{6}, table, monotonic_access_stride, benchmark_min_time_seconds, TieringCalibrationSegmentAccess);
-        register_benchmarks(devices, ColumnID{15}, table, monotonic_access_stride, benchmark_min_time_seconds, TieringCalibrationSegmentAccess);
+        if (modes.find("STRING") != std::string::npos)
+        {
+            register_benchmarks(devices, ColumnID{15}, table, monotonic_access_stride, benchmark_min_time_seconds, TieringCalibrationSegmentAccess);
+        }
 
         std::vector<std::string> arguments = {"TieringSelectionPlugin", "--benchmark_out=" + file_path, "--benchmark_out_format=json"};
         std::vector<char *> argv;
