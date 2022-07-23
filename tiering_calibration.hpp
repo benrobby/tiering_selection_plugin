@@ -476,7 +476,7 @@ namespace opossum
                         ReferenceSegmentIterable<SegmentDataType, EraseReferencedSegmentType::No> reference_segment_iterable(*segment);
                         SegmentDataType acc;
                         reference_segment_iterable.with_iterators([&](auto it, auto end) {
-                                SegmentDataType val;
+                                // SegmentDataType val;
                                 for (; it != end; ++it) {
                                     acc += it->value();
                                     // benchmark::DoNotOptimize(val = it->value());
