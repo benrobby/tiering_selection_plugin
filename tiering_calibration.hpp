@@ -322,11 +322,12 @@ namespace opossum
                   << column_id << " : " << datatype_string << std::endl;
 
         const std::vector<std::string> access_patterns = {
-            "random_single_chunk",
+            // "random_single_chunk",
             "sequential",
-            "random_multiple_chunk",
-            "monotonic",
-            "single_point"};
+            // "random_multiple_chunk",
+            // "monotonic",
+            // "single_point",
+        };
         for (auto &device_name : devices)
         {
             for (const auto &access_pattern : access_patterns)
