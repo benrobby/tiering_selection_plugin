@@ -472,10 +472,11 @@ namespace opossum
                 {
                     resolve_data_type(segment->data_type(), [&](auto type)
                                       {
-                        using SegmentDataType = typename decltype(type)::type;
-                        ReferenceSegmentIterable<SegmentDataType, EraseReferencedSegmentType::No> reference_segment_iterable(*segment);
-                        SegmentDataType acc;
-                        reference_segment_iterable.with_iterators([&](auto it, auto end) {
+                                          using SegmentDataType = typename decltype(type)::type;
+                                          ReferenceSegmentIterable<SegmentDataType, EraseReferencedSegmentType::No> reference_segment_iterable(*segment);
+                                          SegmentDataType acc;
+                                          reference_segment_iterable.with_iterators([&](auto it, auto end)
+                                                                                    {
                                 // SegmentDataType val;
                                 for (; it != end; ++it) {
                                     acc += it->value();
@@ -483,10 +484,9 @@ namespace opossum
                                     // benchmark::DoNotOptimize(val = val + val);
                                     // benchmark::ClobberMemory();
                                 }
-                                i++;
-                            }
-                        ); });
-                    std::cout << "accumulator: " << acc << std::endl;
+                                i++; });
+                                          std::cout << "accumulator: " << acc << std::endl;
+                                      });
                     // std::cout << "segment: " << i << std::endl;
                 }
                 auto end = std::chrono::high_resolution_clock::now();
