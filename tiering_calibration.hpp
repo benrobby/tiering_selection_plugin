@@ -60,7 +60,7 @@ namespace opossum
         {
             if (TieringSelectionPlugin::segment_locations.at(segment_key) == device_name)
             {
-                std::cout << "Segment is already on the correct device. Skipping." << std::endl;
+                // std::cout << "Segment is already on the correct device. Skipping." << std::endl;
                 return 0;
             }
         }
@@ -69,9 +69,9 @@ namespace opossum
             // do not continue and rather copy the segment to dram again if it was initialized there
             // but now use the allocator that we use
 
-            std::cout << "Moving Segment " << table_name << " " << chunk_id << " " << column_id << " to " << device_name << std::endl;
+            // std::cout << "Moving Segment " << table_name << " " << chunk_id << " " << column_id << " to " << device_name << std::endl;
 
-        auto resource = MemoryResourceManager::get().get_memory_resource_for_device(device_name);
+            auto resource = MemoryResourceManager::get().get_memory_resource_for_device(device_name);
         const auto allocator = PolymorphicAllocator<void>{resource};
         const auto &target_segment = table->get_chunk(chunk_id)->get_segment(column_id);
         const auto migrated_segment = target_segment->copy_using_allocator(allocator);
@@ -419,11 +419,11 @@ namespace opossum
 
             for (auto _ : state)
             {
-                std::cout << "benchmark iteration start" << std::endl;
+                // std::cout << "benchmark iteration start" << std::endl;
 
                 clear_caches(random_data_per_device);
 
-                std::cout << "clear caches finished" << std::endl;
+                // std::cout << "clear caches finished" << std::endl;
 
                 std::vector<std::thread> threads;
                 if (use_multithreaded_calibration)
@@ -500,7 +500,7 @@ namespace opossum
                     std::chrono::duration_cast<std::chrono::duration<double>>(
                         end - start);
 
-                std::cout << "benchmark iteration finished, duration (without multiplier) was " << elapsed_seconds.count() << std::endl;
+                // std::cout << "benchmark iteration finished, duration (without multiplier) was " << elapsed_seconds.count() << std::endl;
                 state.SetIterationTime(elapsed_seconds.count() * runtime_multiplier);
             }
         };
