@@ -486,6 +486,7 @@ namespace opossum
                                 }); });
                     // std::cout << "segment: " << i << std::endl;
                 }
+
                 auto end = std::chrono::high_resolution_clock::now();
 
                 stop_threads = true;
