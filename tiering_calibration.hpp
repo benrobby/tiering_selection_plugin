@@ -303,6 +303,7 @@ namespace opossum
         std::shared_ptr<Table> table,
         int monotonic_access_stride,
         int benchmark_min_time_seconds,
+        float reference_segments_size_percentage,
         std::function<void(benchmark::State &,
                            const std::string &,
                            const std::string &,
@@ -323,10 +324,10 @@ namespace opossum
 
         const std::vector<std::string> access_patterns = {
             "sequential",
-            // "random_single_chunk",
-            // "random_multiple_chunk",
-            // "monotonic",
-            // "single_point",
+            "random_single_chunk",
+            "random_multiple_chunk",
+            "monotonic",
+            "single_point",
         };
         for (auto &device_name : devices)
         {
@@ -337,10 +338,13 @@ namespace opossum
                 std::vector<std::shared_ptr<ReferenceSegment>> reference_segments = {};
                 get_reference_segments_with_poslist_for_access_pattern(access_pattern, column_id, table, monotonic_access_stride, reference_segments);
 
+                std::vector<std::shared_ptr<ReferenceSegment>> reference_segments_resized = {};
+                std::copy_n(reference_segments.begin(), static_cast<int>(reference_segments.size() * reference_segments_size_percentage), std::back_inserter(reference_segments_resized));
+
                 std::vector<std::shared_ptr<ReferenceSegment>> concurrent_threads_reference_segments = {};
                 get_reference_segments_with_poslist_for_access_pattern("sequential", ColumnID{5}, table, monotonic_access_stride, concurrent_threads_reference_segments);
 
-                auto num_tuples_scanned_per_iteration = get_num_tuples_per_iteration(reference_segments);
+                auto num_tuples_scanned_per_iteration = get_num_tuples_per_iteration(reference_segments_resized);
                 auto runtime_multiplier = get_access_pattern_runtime_multiplicator_for_g_benchmark(access_pattern, device_name);
 
                 // benchmark::RegisterBenchmark(("TieringCalibrationTableScan " + access_pattern + " " + device_name).c_str(), TieringCalibrationTableScan, device_name, access_pattern);
@@ -379,7 +383,7 @@ namespace opossum
 
                 std::cout << ss.str() << std::endl;
 
-                auto bm = benchmark::RegisterBenchmark(ss.str().c_str(), TieringCalibrationSegmentAccess, device_name, access_pattern, reference_segments, concurrent_threads_reference_segments, runtime_multiplier, column_id);
+                auto bm = benchmark::RegisterBenchmark(ss.str().c_str(), TieringCalibrationSegmentAccess, device_name, access_pattern, reference_segments_resized, concurrent_threads_reference_segments, runtime_multiplier, column_id);
                 bm->UseManualTime();
                 bm->MinTime(benchmark_min_time_seconds); // max wallclock time should be 5 * mintime
             }
@@ -422,7 +426,7 @@ namespace opossum
 
                 clear_caches(random_data_per_device);
 
-                // std::cout << "clear caches finished" << std::endl;
+                std::cout << "clear caches finished" << std::endl;
 
                 std::vector<std::thread> threads;
                 if (use_multithreaded_calibration)
@@ -506,12 +510,12 @@ namespace opossum
 
         if (modes.find("FLOAT") != std::string::npos)
         {
-            register_benchmarks(devices, ColumnID{6}, table, monotonic_access_stride, benchmark_min_time_seconds, TieringCalibrationSegmentAccess);
+            register_benchmarks(devices, ColumnID{6}, table, monotonic_access_stride, benchmark_min_time_seconds, 1.0, TieringCalibrationSegmentAccess);
         }
 
         if (modes.find("STRING") != std::string::npos)
         {
-            register_benchmarks(devices, ColumnID{15}, table, monotonic_access_stride, benchmark_min_time_seconds, TieringCalibrationSegmentAccess);
+            register_benchmarks(devices, ColumnID{15}, table, monotonic_access_stride, benchmark_min_time_seconds, 0.1, TieringCalibrationSegmentAccess);
         }
 
         std::vector<std::string> arguments = {"TieringSelectionPlugin", "--benchmark_out=" + file_path, "--benchmark_out_format=json"};
