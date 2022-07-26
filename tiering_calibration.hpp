@@ -304,6 +304,7 @@ namespace opossum
         int monotonic_access_stride,
         int benchmark_min_time_seconds,
         float reference_segments_size_percentage,
+        std::vector<std::string> access_patterns,
         std::function<void(benchmark::State &,
                            const std::string &,
                            const std::string &,
@@ -322,13 +323,6 @@ namespace opossum
         std::cout << "datatype for column "
                   << column_id << " : " << datatype_string << std::endl;
 
-        const std::vector<std::string> access_patterns = {
-            "sequential",
-            "random_single_chunk",
-            "random_multiple_chunk",
-            "monotonic",
-            "single_point",
-        };
         for (auto &device_name : devices)
         {
             for (const auto &access_pattern : access_patterns)
@@ -391,7 +385,7 @@ namespace opossum
     }
 
     // scale factor should be sufficient size so we don't just measure the caches
-    void tiering_calibration(const std::string &file_path, const std::vector<std::string> &devices, const float scale_factor, const float benchmark_min_time_seconds, const int random_data_size_per_device_mb, const int monotonic_access_stride, const int num_concurrent_threads, const bool use_multithreaded_calibration, std::string modes)
+    void tiering_calibration(const std::string &file_path, const std::vector<std::string> &devices, const float scale_factor, const float benchmark_min_time_seconds, const int random_data_size_per_device_mb, const int monotonic_access_stride, const int num_concurrent_threads, const bool use_multithreaded_calibration, std::string modes, std::string access_patterns_string)
     {
         std::cout << "Tiering calibration from plugin" << std::endl;
         const auto table_name = "lineitem";
@@ -428,13 +422,13 @@ namespace opossum
 
                 std::cout << "clear caches finished" << std::endl;
 
-                std::vector<std::thread> threads;
+                std::vector<std::thread> concurrent_threads;
                 if (use_multithreaded_calibration)
                 {
                     for (int thread_id = 0; thread_id < num_concurrent_threads; thread_id++)
                     {
-                        threads.push_back(std::thread([=]()
-                                                      {
+                        concurrent_threads.push_back(std::thread([=]()
+                                                                 {
                             // std::stringstream ss;
                             // ss << "thread_id: " << thread_id << " started \n";
                             // std::cout << ss.str();
@@ -493,9 +487,9 @@ namespace opossum
                 auto end = std::chrono::high_resolution_clock::now();
 
                 stop_threads = true;
-                for (auto &thread : threads)
+                for (auto &concurrent_thread : concurrent_threads)
                 {
-                    thread.join();
+                    concurrent_thread.join();
                 }
                 stop_threads = false;
 
@@ -508,14 +502,17 @@ namespace opossum
             }
         };
 
+        auto access_patterns = std::vector<std::string>{};
+        boost::split(access_patterns, access_patterns_string, boost::is_any_of(";"), boost::token_compress_on);
+
         if (modes.find("FLOAT") != std::string::npos)
         {
-            register_benchmarks(devices, ColumnID{6}, table, monotonic_access_stride, benchmark_min_time_seconds, 1.0, TieringCalibrationSegmentAccess);
+            register_benchmarks(devices, ColumnID{6}, table, monotonic_access_stride, benchmark_min_time_seconds, 1.0, access_patterns, TieringCalibrationSegmentAccess);
         }
 
         if (modes.find("STRING") != std::string::npos)
         {
-            register_benchmarks(devices, ColumnID{15}, table, monotonic_access_stride, benchmark_min_time_seconds, 0.1, TieringCalibrationSegmentAccess);
+            register_benchmarks(devices, ColumnID{15}, table, monotonic_access_stride, benchmark_min_time_seconds, 0.1, access_patterns, TieringCalibrationSegmentAccess);
         }
 
         std::vector<std::string> arguments = {"TieringSelectionPlugin", "--benchmark_out=" + file_path, "--benchmark_out_format=json"};
