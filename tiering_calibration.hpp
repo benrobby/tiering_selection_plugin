@@ -135,13 +135,23 @@ namespace opossum
     void clear_caches(const std::vector<pmr_vector<uint32_t>> &random_data_per_device)
     {
         uint32_t random_data_sum;
-        for (int i = 0; i < 20; i++)
+        std::vector<std::thread> threads = {};
+        for (int j = 0; j < 4; j++)
         {
-            for (const auto &random_data : random_data_per_device)
-            {
-                benchmark::DoNotOptimize(random_data_sum = std::accumulate(random_data.begin(), random_data.end(), 0));
-                benchmark::ClobberMemory();
-            }
+            threads.emplace_back([&]()
+                                 {
+                for (int i = 0; i < 5; i++)
+                {
+                    for (const auto &random_data : random_data_per_device)
+                    {
+                        benchmark::DoNotOptimize(random_data_sum = std::accumulate(random_data.begin(), random_data.end(), 0));
+                        benchmark::ClobberMemory();
+                    }
+                } });
+        }
+        for (auto &thread : threads)
+        {
+            thread.join();
         }
     }
 
