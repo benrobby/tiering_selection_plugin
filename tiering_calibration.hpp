@@ -385,7 +385,7 @@ namespace opossum
     }
 
     // scale factor should be sufficient size so we don't just measure the caches
-    void tiering_calibration(const std::string &file_path, const std::vector<std::string> &devices, const float scale_factor, const float benchmark_min_time_seconds, const int random_data_size_per_device_mb, const int monotonic_access_stride, const int num_concurrent_threads, const bool use_multithreaded_calibration, std::string modes, std::string access_patterns_string)
+    void tiering_calibration(const std::string &file_path, const std::vector<std::string> &devices, const float scale_factor, const float benchmark_min_time_seconds, const int random_data_size_per_device_mb, const int monotonic_access_stride, const int num_concurrent_threads, const int num_reader_threads, std::string modes, std::string access_patterns_string)
     {
         std::cout << "Tiering calibration from plugin" << std::endl;
         const auto table_name = "lineitem";
@@ -423,67 +423,82 @@ namespace opossum
                 std::cout << "clear caches finished" << std::endl;
 
                 std::vector<std::thread> concurrent_threads;
-                if (use_multithreaded_calibration)
+                for (int thread_id = 0; thread_id < num_concurrent_threads; thread_id++)
                 {
-                    for (int thread_id = 0; thread_id < num_concurrent_threads; thread_id++)
-                    {
-                        concurrent_threads.push_back(std::thread([=]()
-                                                                 {
-                            // std::stringstream ss;
-                            // ss << "thread_id: " << thread_id << " started \n";
-                            // std::cout << ss.str();
-                            while (!stop_threads) {
-                                for (auto it = concurrent_thread_reference_segments.rbegin(); it != concurrent_thread_reference_segments.rend(); ++it)
-                                {
-                                    const auto &segment = *it;
-                                    if (stop_threads) {
-                                        // std::cout << "thread " << thread_id << " finished\n";
-                                        return;
-                                    }
-                                    // std::cout << "segment: " << i << std::endl;
-                                    // resolve segment type was a hassle
-
-                                    resolve_data_type(segment->data_type(), [&](auto type)
-                                                        { using SegmentDataType = typename decltype(type)::type;
-
-                                            ReferenceSegmentIterable<SegmentDataType, EraseReferencedSegmentType::No> reference_segment_iterable(*segment);
-                                            reference_segment_iterable.with_iterators([](auto it, auto end) {
-                                                    SegmentDataType val;
-                                                    for (; it != end; ++it) {
-                                                        benchmark::DoNotOptimize(val = it->value());
-                                                        benchmark::ClobberMemory();
-                                                    }
-                                                }
-                                            );
-                                    });
+                    concurrent_threads.push_back(std::thread([=]()
+                                                             {
+                        // std::stringstream ss;
+                        // ss << "thread_id: " << thread_id << " started \n";
+                        // std::cout << ss.str();
+                        while (!stop_threads) {
+                            for (auto it = concurrent_thread_reference_segments.rbegin(); it != concurrent_thread_reference_segments.rend(); ++it)
+                            {
+                                const auto &segment = *it;
+                                if (stop_threads) {
+                                    // std::cout << "thread " << thread_id << " finished\n";
+                                    return;
                                 }
+                                // std::cout << "segment: " << i << std::endl;
+                                // resolve segment type was a hassle
+
+                                resolve_data_type(segment->data_type(), [&](auto type)
+                                                    { using SegmentDataType = typename decltype(type)::type;
+
+                                        ReferenceSegmentIterable<SegmentDataType, EraseReferencedSegmentType::No> reference_segment_iterable(*segment);
+                                        reference_segment_iterable.with_iterators([](auto it, auto end) {
+                                                SegmentDataType val;
+                                                for (; it != end; ++it) {
+                                                    benchmark::DoNotOptimize(val = it->value());
+                                                    benchmark::ClobberMemory();
+                                                }
+                                            }
+                                        );
+                                });
                             }
-                            // std::cout << "thread " << thread_id << " finished\n";
-                            return; }));
-                    }
+                        }
+                        // std::cout << "thread " << thread_id << " finished\n";
+                        return; }));
+                }
+
+                // int i = 0;
+
+                std::vector<std::thread> reader_threads;
+                std::vector<std::vector<std::shared_ptr<ReferenceSegment>>> reference_segments_per_reader_thread = {};
+                size_t num_reference_segments_per_reader_thread = reference_segments.size() / num_reader_threads;
+                for (size_t i = 0; i < reference_segments.size(); i += num_reference_segments_per_reader_thread)
+                {
+                    auto last = std::min(reference_segments.size(), i + num_reference_segments_per_reader_thread);
+                    reference_segments_per_reader_thread.emplace_back(reference_segments.begin() + i, reference_segments.begin() + last);
                 }
 
                 auto start = std::chrono::high_resolution_clock::now();
-                int i = 0;
-                for (const auto &segment : reference_segments)
-                {
-                    resolve_data_type(segment->data_type(), [&](auto type)
-                                      {
-                                          using SegmentDataType = typename decltype(type)::type;
-                                          ReferenceSegmentIterable<SegmentDataType, EraseReferencedSegmentType::No> reference_segment_iterable(*segment);
-                                          reference_segment_iterable.with_iterators([&](auto it, auto end)
-                                                                                    {
-                                SegmentDataType val;
-                                for (; it != end; ++it) {
-                                    benchmark::DoNotOptimize(val = it->value());
-                                    benchmark::DoNotOptimize(val = val + val);
-                                    benchmark::ClobberMemory();
-                                }
-                                i++;
-                                }); });
-                    // std::cout << "segment: " << i << std::endl;
-                }
 
+                for (int thread_id = 0; thread_id < num_reader_threads; thread_id++)
+                {
+                    reader_threads.push_back(std::thread([=]()
+                                                         {
+                        for (const auto &segment : reference_segments_per_reader_thread[thread_id])
+                        {
+                            resolve_data_type(segment->data_type(), [&](auto type)
+                                              {
+                                using SegmentDataType = typename decltype(type)::type;
+                                ReferenceSegmentIterable<SegmentDataType, EraseReferencedSegmentType::No> reference_segment_iterable(*segment);
+                                reference_segment_iterable.with_iterators([&](auto it, auto end)
+                                                                          {
+                                    SegmentDataType val;
+                                    for (; it != end; ++it)
+                                    {
+                                        benchmark::DoNotOptimize(val = it->value());
+                                        benchmark::DoNotOptimize(val = val + val);
+                                        benchmark::ClobberMemory();
+                                    } }); });
+                        }
+                        return; }));
+                }
+                for (auto &reader_thread : reader_threads)
+                {
+                    reader_thread.join();
+                }
                 auto end = std::chrono::high_resolution_clock::now();
 
                 stop_threads = true;

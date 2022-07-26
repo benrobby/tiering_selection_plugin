@@ -171,7 +171,7 @@ namespace opossum
         boost::split(command_strings, command, boost::is_any_of(" "), boost::token_compress_on);
         const auto num_commands = 12;
         Assert(command_strings.size() >= num_commands,
-               "Expecting one param. Usage: RUN TIERING CALIBRATION <file> <scale_factor> <benchmark_min_time_seconds> <random_data_size_per_device_mb> <monotonic_access_stride> <num_concurrent_threads> <use_multithreaded_calibration> <modes> <access_patterns> <device_1> <device_2> ...");
+               "Expecting one param. Usage: RUN TIERING CALIBRATION <file> <scale_factor> <benchmark_min_time_seconds> <random_data_size_per_device_mb> <monotonic_access_stride> <num_concurrent_threads> <num_reader_threads> <modes> <access_patterns> <device_1> <device_2> ...");
 
         const auto file_path_str = command_strings[3];
         const auto scale_factor = command_strings[4];
@@ -179,12 +179,12 @@ namespace opossum
         const auto random_data_size_per_device_mb = command_strings[6];
         const auto monotonic_access_stride = command_strings[7];
         const auto num_concurrent_threads = command_strings[8];
-        const auto use_multithreaded_calibration = command_strings[9];
+        const auto num_reader_threads = command_strings[9];
         const auto modes = command_strings[10];
         const auto access_patterns = command_strings[11];
 
         auto devices = std::vector<std::string>(command_strings.begin() + num_commands, command_strings.end());
-        tiering_calibration(file_path_str, devices, std::stod(scale_factor), std::stod(benchmark_min_time_seconds), std::stoi(random_data_size_per_device_mb), std::stoi(monotonic_access_stride), std::stoi(num_concurrent_threads), use_multithreaded_calibration == "True", modes, access_patterns);
+        tiering_calibration(file_path_str, devices, std::stod(scale_factor), std::stod(benchmark_min_time_seconds), std::stoi(random_data_size_per_device_mb), std::stoi(monotonic_access_stride), std::stoi(num_concurrent_threads), std::stoi(num_reader_threads), modes, access_patterns);
     }
 
     void handle_set_devices(const std::string command)
