@@ -292,7 +292,7 @@ namespace opossum
         // {
         //     multiplicator *= 10;
         // }
-        multiplicator *= 10;
+        multiplicator *= 20;
 
         return multiplicator;
     }
