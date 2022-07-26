@@ -499,7 +499,7 @@ namespace opossum
                                     for (; it != end; ++it)
                                     {
                                         benchmark::DoNotOptimize(val = it->value());
-                                        benchmark::DoNotOptimize(val = val + val);
+                                        // benchmark::DoNotOptimize(val = val + val);
                                         benchmark::ClobberMemory();
                                     } }); });
                         }
