@@ -141,7 +141,7 @@ namespace opossum
         {
             threads.emplace_back([&]()
                                  {
-                for (int i = 0; i < 5; i++)
+                for (int i = 0; i < 20; i++)
                 {
                     for (const auto &random_data : random_data_per_device)
                     {
