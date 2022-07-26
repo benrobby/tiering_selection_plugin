@@ -137,11 +137,11 @@ namespace opossum
         std::cout << "Clearing caches" << std::endl;
         uint32_t random_data_sum;
         std::vector<std::thread> threads = {};
-        for (int j = 0; j < 8; j++)
+        for (int j = 0; j < 4; j++)
         {
             threads.emplace_back([&]()
                                  {
-                for (int i = 0; i < 4; i++)
+                for (int i = 0; i < 5; i++)
                 {
                     for (const auto &random_data : random_data_per_device)
                     {
@@ -275,7 +275,7 @@ namespace opossum
     // and that leads to google benchmark running a single benchmark for 2+ hours.
     // this is especially an issue for short-running benchmarks (e.g. single_point as benchmark wants to repeat them very often)
     // We have to remember to divide by this again in python.
-    int get_access_pattern_runtime_multiplicator_for_g_benchmark(const std::string &access_pattern, const std::string &device_name)
+    int get_access_pattern_runtime_multiplicator_for_g_benchmark(const std::string &access_pattern, const std::string &device_name, const std::string &datatype)
     {
         int multiplicator = 1;
         if (access_pattern == "single_point")
@@ -303,7 +303,14 @@ namespace opossum
         // {
         //     multiplicator *= 10;
         // }
-        multiplicator *= 20;
+        if (datatype == "float")
+        {
+            multiplicator *= 100;
+        }
+        if (datatype == "string")
+        {
+            multiplicator *= 100;
+        }
 
         return multiplicator;
     }
@@ -350,7 +357,7 @@ namespace opossum
                 get_reference_segments_with_poslist_for_access_pattern("sequential", ColumnID{5}, table, monotonic_access_stride, concurrent_threads_reference_segments);
 
                 auto num_tuples_scanned_per_iteration = get_num_tuples_per_iteration(reference_segments_resized);
-                auto runtime_multiplier = get_access_pattern_runtime_multiplicator_for_g_benchmark(access_pattern, device_name);
+                auto runtime_multiplier = get_access_pattern_runtime_multiplicator_for_g_benchmark(access_pattern, device_name, datatype_string);
 
                 // benchmark::RegisterBenchmark(("TieringCalibrationTableScan " + access_pattern + " " + device_name).c_str(), TieringCalibrationTableScan, device_name, access_pattern);
 
