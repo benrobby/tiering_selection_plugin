@@ -285,14 +285,14 @@ namespace opossum
         }
         else if (access_pattern == "sequential")
         {
-            multiplicator = 2;
+            multiplicator = 5;
         }
 
-        if (device_name != "DRAM")
-        {
-            multiplicator *= 10;
-        }
-        // multiplicator *= 10;
+        // if (device_name != "DRAM")
+        // {
+        //     multiplicator *= 10;
+        // }
+        multiplicator *= 10;
 
         return multiplicator;
     }
