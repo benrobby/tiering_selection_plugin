@@ -134,6 +134,7 @@ namespace opossum
 
     void clear_caches(const std::vector<pmr_vector<uint32_t>> &random_data_per_device)
     {
+        std::cout << "Clearing caches" << std::endl;
         uint32_t random_data_sum;
         std::vector<std::thread> threads = {};
         for (int j = 0; j < 24; j++)
