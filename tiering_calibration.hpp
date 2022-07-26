@@ -137,7 +137,7 @@ namespace opossum
         std::cout << "Clearing caches" << std::endl;
         uint32_t random_data_sum;
         std::vector<std::thread> threads = {};
-        for (int j = 0; j < 16; j++)
+        for (int j = 0; j < 32; j++)
         {
             threads.emplace_back([&]()
                                  {
