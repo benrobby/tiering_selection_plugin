@@ -136,11 +136,11 @@ namespace opossum
     {
         uint32_t random_data_sum;
         std::vector<std::thread> threads = {};
-        for (int j = 0; j < 4; j++)
+        for (int j = 0; j < 24; j++)
         {
             threads.emplace_back([&]()
                                  {
-                for (int i = 0; i < 5; i++)
+                for (int i = 0; i < 3; i++)
                 {
                     for (const auto &random_data : random_data_per_device)
                     {
@@ -302,7 +302,7 @@ namespace opossum
         // {
         //     multiplicator *= 10;
         // }
-        multiplicator *= 200;
+        multiplicator *= 100;
 
         return multiplicator;
     }
