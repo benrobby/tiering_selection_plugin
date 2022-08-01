@@ -184,6 +184,7 @@ namespace opossum
         const auto access_patterns = command_strings[11];
 
         auto devices = std::vector<std::string>(command_strings.begin() + num_commands, command_strings.end());
+
         tiering_calibration(file_path_str, devices, std::stod(scale_factor), std::stod(benchmark_min_time_seconds), std::stoi(random_data_size_per_device_mb), std::stoi(monotonic_access_stride), std::stoi(num_concurrent_threads), std::stoi(num_reader_threads), modes, access_patterns);
     }
 
