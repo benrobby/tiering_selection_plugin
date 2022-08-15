@@ -174,37 +174,51 @@ namespace opossum
 
         if (access_pattern == "random_multiple_chunk")
         {
-            std::vector<std::vector<RowID>> all_positions_per_chunk = {};
+            std::vector<std::vector<RowID>> row_ids_for_chunks = {};
             // for each segment shuffle one poslist
             for (auto chunk_id = ChunkID{0}; chunk_id < table->chunk_count(); ++chunk_id)
             {
-                std::vector<RowID> positions_for_chunk = {};
+                std::vector<RowID> row_ids_for_chunk = {};
 
                 for (auto i = ChunkOffset{0}; i < table->get_chunk(chunk_id)->get_segment(column_id)->size(); i++)
                 {
-                    positions_for_chunk.push_back(RowID{chunk_id, i});
+                    row_ids_for_chunk.push_back(RowID{chunk_id, i});
                 }
 
-                std::random_shuffle(positions_for_chunk.begin(), positions_for_chunk.end());
-                all_positions_per_chunk.push_back(positions_for_chunk);
+                std::random_shuffle(row_ids_for_chunk.begin(), row_ids_for_chunk.end());
+                row_ids_for_chunks.push_back(row_ids_for_chunk);
             }
 
-            for (auto chunk_id = ChunkID{0}; chunk_id < table->chunk_count(); ++chunk_id)
-            {
-                auto pos_list = std::make_shared<RowIDPosList>();
-                for (auto i = ChunkOffset{0}; i < table->get_chunk(chunk_id)->get_segment(column_id)->size() / 1000; i++)
+            unsigned int num_values = table->chunk_count() * (table->get_chunk(ChunkID{0})->get_segment(column_id)->size() / 10000);
+            auto pos_list = std::make_shared<RowIDPosList>();
+            for (unsigned int i = 0; i < num_values; ++i) {
+                auto row_ids_for_chunk = row_ids_for_chunks[i % row_ids_for_chunks.size()];
+                auto row_id = row_ids_for_chunk[i % row_ids_for_chunk.size()];
+                pos_list->push_back(RowID{row_id.chunk_id, row_id.chunk_offset});
+                if (row_id.chunk_id > table->chunk_count())
                 {
-                    // for each tuple (with stride though) get a random position. Make sure that they two subsequent tuples don't go to the same segment.
-                    auto positions = all_positions_per_chunk[i % all_positions_per_chunk.size()];
-                    auto position = positions[i % positions.size()];
-                    pos_list->push_back(RowID{position.chunk_id, position.chunk_offset});
-                    if (position.chunk_id > table->chunk_count())
-                    {
-                        std::cout << "adding chunk_id " << position.chunk_id << " chunk_offset " << position.chunk_offset << std::endl;
-                    }
+                    std::cout << "adding chunk_id " << row_id.chunk_id << " chunk_offset " << row_id.chunk_offset << std::endl;
                 }
-                reference_segments.push_back(std::make_shared<ReferenceSegment>(table, column_id, pos_list));
             }
+            reference_segments.push_back(std::make_shared<ReferenceSegment>(table, column_id, pos_list));
+
+
+            // for (auto chunk_id = ChunkID{0}; chunk_id < table->chunk_count(); ++chunk_id)
+            // {
+            //     auto pos_list = std::make_shared<RowIDPosList>();
+            //     for (auto i = ChunkOffset{0}; i < table->get_chunk(chunk_id)->get_segment(column_id)->size() / 1000; i++)
+            //     {
+            //         // for each tuple (with stride though) get a random position. Make sure that they two subsequent tuples don't go to the same segment.
+            //         auto positions = all_positions_per_chunk[i % all_positions_per_chunk.size()];
+            //         auto position = positions[i % positions.size()];
+            //         pos_list->push_back(RowID{position.chunk_id, position.chunk_offset});
+            //         if (position.chunk_id > table->chunk_count())
+            //         {
+            //             std::cout << "adding chunk_id " << position.chunk_id << " chunk_offset " << position.chunk_offset << std::endl;
+            //         }
+            //     }
+            //     reference_segments.push_back(std::make_shared<ReferenceSegment>(table, column_id, pos_list));
+            // }
         }
         else
         {
