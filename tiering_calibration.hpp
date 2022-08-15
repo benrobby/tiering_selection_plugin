@@ -195,10 +195,7 @@ namespace opossum
                 auto row_ids_for_chunk = row_ids_for_chunks[i % row_ids_for_chunks.size()];
                 auto row_id = row_ids_for_chunk[i % row_ids_for_chunk.size()];
                 pos_list->push_back(RowID{row_id.chunk_id, row_id.chunk_offset});
-                if (row_id.chunk_id > table->chunk_count())
-                {
-                    std::cout << "adding chunk_id " << row_id.chunk_id << " chunk_offset " << row_id.chunk_offset << std::endl;
-                }
+                std::cout << "adding chunk_id " << row_id.chunk_id << " chunk_offset " << row_id.chunk_offset << std::endl;
             }
             reference_segments.push_back(std::make_shared<ReferenceSegment>(table, column_id, pos_list));
 
@@ -437,6 +434,11 @@ namespace opossum
             std::cout << "device_name: " << device_name << " access_pattern: " << access_pattern << " column id: " << column_id << std::endl;
             move_segments_to_device(device_name, table_name, table, column_id);
 
+            auto num_reader_threads_for_access_pattern = num_reader_threads;
+            if (access_pattern == "random_single_chunk" || access_pattern == "random_multiple_chunk") {
+                num_reader_threads_for_access_pattern = 1;
+            }
+
             /**
              * Measurement: for all segments, access all indices in the poslist
              * Let n be the number of rows over all segments for the given column.
@@ -496,7 +498,7 @@ namespace opossum
 
                 std::vector<std::thread> reader_threads;
                 std::vector<std::vector<std::shared_ptr<ReferenceSegment>>> reference_segments_per_reader_thread = {};
-                size_t num_reference_segments_per_reader_thread = reference_segments.size() / num_reader_threads;
+                size_t num_reference_segments_per_reader_thread = reference_segments.size() / num_reader_threads_for_access_pattern;
                 for (size_t i = 0; i < reference_segments.size(); i += num_reference_segments_per_reader_thread)
                 {
                     auto last = std::min(reference_segments.size(), i + num_reference_segments_per_reader_thread);
@@ -505,7 +507,7 @@ namespace opossum
 
                 auto start = std::chrono::high_resolution_clock::now();
 
-                for (int thread_id = 0; thread_id < num_reader_threads; thread_id++)
+                for (int thread_id = 0; thread_id < num_reader_threads_for_access_pattern; thread_id++)
                 {
                     reader_threads.push_back(std::thread([=]()
                                                          {
