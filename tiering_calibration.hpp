@@ -513,8 +513,10 @@ namespace opossum
                                                          {
                         for (const auto &segment : reference_segments_per_reader_thread[thread_id])
                         {
+                            std::cout << "reading segment\n";
                             resolve_data_type(segment->data_type(), [&](auto type)
                                               {
+                                auto abc = 0;
                                 using SegmentDataType = typename decltype(type)::type;
                                 ReferenceSegmentIterable<SegmentDataType, EraseReferencedSegmentType::No> reference_segment_iterable(*segment);
                                 reference_segment_iterable.with_iterators([&](auto it, auto end)
@@ -522,9 +524,12 @@ namespace opossum
                                     SegmentDataType val;
                                     for (; it != end; ++it)
                                     {
+                                        abc++;
                                         benchmark::DoNotOptimize(val = it->value());
                                         // benchmark::DoNotOptimize(val = val + val);
                                         benchmark::ClobberMemory();
+
+                                        std::cout << abc << std::endl;
                                     } }); });
                         }
                         return; }));
