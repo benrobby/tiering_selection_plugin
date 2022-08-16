@@ -510,6 +510,7 @@ namespace opossum
                 std::cout << "num_reader_threads_for_access_pattern" << num_reader_threads_for_access_pattern << std::endl;
                 std::cout << "num_concurrent_threads" << num_concurrent_threads << std::endl;
                 std::cout << "reference_segments_per_reader_thread" << reference_segments_per_reader_thread.size() << std::endl;
+                std::cout << "reference_segments.size()" << reference_segments.size() << std::endl;
                 std::cout << "reference_segments_per_reader_thread[0]" << reference_segments_per_reader_thread[0].size() << std::endl;
 
                 for (int thread_id = 0; thread_id < num_reader_threads_for_access_pattern; thread_id++)
