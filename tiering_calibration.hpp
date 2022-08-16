@@ -362,7 +362,7 @@ namespace opossum
                 get_reference_segments_with_poslist_for_access_pattern(access_pattern, column_id, table, monotonic_access_stride, reference_segments);
 
                 std::vector<std::shared_ptr<ReferenceSegment>> reference_segments_resized = {};
-                std::copy_n(reference_segments.begin(), static_cast<int>(reference_segments.size() * reference_segments_size_percentage), std::back_inserter(reference_segments_resized));
+                std::copy_n(reference_segments.begin(), std::max(1, static_cast<int>(reference_segments.size() * reference_segments_size_percentage)), std::back_inserter(reference_segments_resized));
 
                 std::vector<std::shared_ptr<ReferenceSegment>> concurrent_threads_reference_segments = {};
                 get_reference_segments_with_poslist_for_access_pattern("sequential", ColumnID{5}, table, monotonic_access_stride, concurrent_threads_reference_segments);
@@ -507,23 +507,23 @@ namespace opossum
 
                 auto start = std::chrono::high_resolution_clock::now();
 
-                std::cout << "num_reader_threads_for_access_pattern" << num_reader_threads_for_access_pattern << std::endl;
-                std::cout << "num_concurrent_threads" << num_concurrent_threads << std::endl;
-                std::cout << "reference_segments_per_reader_thread" << reference_segments_per_reader_thread.size() << std::endl;
-                std::cout << "reference_segments.size()" << reference_segments.size() << std::endl;
-                std::cout << "reference_segments_per_reader_thread[0]" << reference_segments_per_reader_thread[0].size() << std::endl;
+                // std::cout << "num_reader_threads_for_access_pattern" << num_reader_threads_for_access_pattern << std::endl;
+                // std::cout << "num_concurrent_threads" << num_concurrent_threads << std::endl;
+                // std::cout << "reference_segments_per_reader_thread" << reference_segments_per_reader_thread.size() << std::endl;
+                // std::cout << "reference_segments.size()" << reference_segments.size() << std::endl;
+                // std::cout << "reference_segments_per_reader_thread[0]" << reference_segments_per_reader_thread[0].size() << std::endl;
 
                 for (int thread_id = 0; thread_id < num_reader_threads_for_access_pattern; thread_id++)
                 {
-                    std::cout << "starting thread" << thread_id << std::endl;
+                    // std::cout << "starting thread" << thread_id << std::endl;
                     reader_threads.push_back(std::thread([=]()
                                                          {
                         for (const auto &segment : reference_segments_per_reader_thread[thread_id])
                         {
-                            std::cout << "reading segment\n";
+                            // std::cout << "reading segment\n";
                             resolve_data_type(segment->data_type(), [&](auto type)
                                               {
-                                auto abc = 0;
+                                // auto abc = 0;
                                 using SegmentDataType = typename decltype(type)::type;
                                 ReferenceSegmentIterable<SegmentDataType, EraseReferencedSegmentType::No> reference_segment_iterable(*segment);
                                 reference_segment_iterable.with_iterators([&](auto it, auto end)
@@ -531,12 +531,12 @@ namespace opossum
                                     SegmentDataType val;
                                     for (; it != end; ++it)
                                     {
-                                        abc++;
+                                        // abc++;
                                         benchmark::DoNotOptimize(val = it->value());
                                         // benchmark::DoNotOptimize(val = val + val);
                                         benchmark::ClobberMemory();
 
-                                        std::cout << abc << std::endl;
+                                        // std::cout << abc << std::endl;
                                     } }); });
                         }
                         return; }));
