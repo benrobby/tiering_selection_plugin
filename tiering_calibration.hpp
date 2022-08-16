@@ -507,8 +507,14 @@ namespace opossum
 
                 auto start = std::chrono::high_resolution_clock::now();
 
+                std::cout << "num_reader_threads_for_access_pattern" << num_reader_threads_for_access_pattern << std::endl;
+                std::cout << "num_concurrent_threads" << num_concurrent_threads << std::endl;
+                std::cout << "reference_segments_per_reader_thread" << reference_segments_per_reader_thread.size() << std::endl;
+                std::cout << "reference_segments_per_reader_thread[0]" << reference_segments_per_reader_thread[0].size() << std::endl;
+
                 for (int thread_id = 0; thread_id < num_reader_threads_for_access_pattern; thread_id++)
                 {
+                    std::cout << "starting thread" << thread_id << std::endl;
                     reader_threads.push_back(std::thread([=]()
                                                          {
                         for (const auto &segment : reference_segments_per_reader_thread[thread_id])
