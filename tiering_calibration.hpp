@@ -566,6 +566,11 @@ namespace opossum
         auto access_patterns = std::vector<std::string>{};
         boost::split(access_patterns, access_patterns_string, boost::is_any_of(";"), boost::token_compress_on);
 
+        if (modes.find("INT") != std::string::npos)
+        {
+            register_benchmarks(devices, ColumnID{0}, table, monotonic_access_stride, benchmark_min_time_seconds, 1.0, access_patterns, TieringCalibrationSegmentAccess);
+        }
+
         if (modes.find("FLOAT") != std::string::npos)
         {
             register_benchmarks(devices, ColumnID{6}, table, monotonic_access_stride, benchmark_min_time_seconds, 1.0, access_patterns, TieringCalibrationSegmentAccess);
